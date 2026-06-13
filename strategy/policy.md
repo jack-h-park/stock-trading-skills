@@ -54,6 +54,23 @@ Only trade these symbols. Anything else requires explicit user instruction.
   cost. **ETFs (VOO, QQQM) have no hard stop** — hold through drawdowns.
 - All exits (sells) are **always confirm-before-place** — never auto (see guardrails).
 
+## Prioritization (deterministic — when signals exceed the daily order cap)
+
+When more symbols signal than the daily order cap allows (`config/guardrails.md`), select
+which to act on by these rules **in order, with no discretionary judgment**. The same inputs
+must always produce the same ranked list:
+
+1. **Rank by drawdown depth, deepest first** (most below the 20-day high → highest priority).
+2. **Tie-break (equal drawdown to 2 decimal places): alphabetical by symbol.**
+3. Take the top N where N = remaining order slots for the day.
+4. Symbols already at the position cap, already added this week, or otherwise blocked by a
+   guardrail are removed *before* ranking (they were never eligible).
+
+Do **not** reorder by "conviction", news, or any qualitative read. Conviction/context
+belongs in the **Flags** section of the review as a *note to the user*, never as a change to
+the ranked proposal. If context warrants skipping a top-ranked name, surface it as a flag and
+let the user decide — the deterministic list stands as the default.
+
 ## Holding horizon
 
 Days to a few weeks (swing). Not intraday; not indefinite buy-and-hold.
