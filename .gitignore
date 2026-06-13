@@ -1,1 +1,4 @@
 .DS_Store
+
+# operational cron run logs (Robinhood is the data source; these are noise)
+logs/cron/

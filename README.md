@@ -38,6 +38,36 @@ not as new repos.
 
 Keep the contract thin — refine it only when a second provider actually lands.
 
+## Scheduled review (local launchd)
+
+A read-only `portfolio-review` runs automatically on weekdays at **13:30 PT (16:30 ET, 30 min
+after the US close)** via a macOS LaunchAgent.
+
+- Runner: [`scripts/run-review.sh`](scripts/run-review.sh) — invokes headless `claude -p`,
+  which queries Robinhood **live** (no local data store), computes dip signals, writes a
+  dated report to `logs/reviews/`, and commits.
+- Schedule: [`scripts/com.jackpark.trading-agent-review.plist`](scripts/com.jackpark.trading-agent-review.plist)
+  (tracked copy; the active copy lives in `~/Library/LaunchAgents/`).
+- **Read-only by construction:** the runner whitelists only Robinhood *read* tools + file
+  write + git via `--allowedTools`. `place_equity_order` / `cancel_equity_order` are not
+  whitelisted, so the scheduled job physically cannot trade (verified).
+
+Operate it:
+
+```bash
+# load / unload
+launchctl load -w  ~/Library/LaunchAgents/com.jackpark.trading-agent-review.plist
+launchctl unload   ~/Library/LaunchAgents/com.jackpark.trading-agent-review.plist
+# run once now (bypasses the weekend guard)
+FORCE=1 bash scripts/run-review.sh
+# logs
+cat logs/cron/$(date +%F).run.log
+```
+
+Data is never accumulated locally — Robinhood is the source of truth and is queried fresh
+each run. `logs/reviews/` is a *decision journal* (the "why"), not a data store; `logs/cron/`
+holds run logs and is git-ignored.
+
 ## Safety & responsibility
 
 Order placement moves real money and is **irreversible**. The user is ultimately
