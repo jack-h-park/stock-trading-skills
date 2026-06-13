@@ -13,10 +13,17 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
   - symbol ∈ universe in `strategy/policy.md`
   - order notional ≤ **$100** (per-order cap below)
   - within the daily limits below (count and total)
-  - order_type = `limit` (no auto market orders)
-  - within allowed trading hours (regular session)
+  - order_type = `market` with `dollar_amount` (notional) — see note below
+  - within regular US session hours (notional/fractional reject outside regular hours)
+  - symbol is an ultra-liquid universe name (tight spread) per `strategy/policy.md`
   - kill-switch not active
   - Sells, trims, and any exit are **always confirm** (never auto).
+
+> **Why market, not limit:** Robinhood notional ($-amount) and fractional orders are only
+> accepted as `type=market` in regular hours; limit orders require a whole/known share
+> quantity. Every universe symbol trades > $100/share, so a $100 order *must* be a notional
+> market order. This is safe only because the universe is restricted to ultra-liquid
+> mega-caps/ETFs with ~0.1% spreads. Do NOT auto-place market orders on anything illiquid.
 
 ## Hard limits
 
@@ -26,8 +33,8 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
 | Max orders per day | **3** |
 | Max total notional per day | **$1,000** |
 | Max position size (% of portfolio) | **20%** |
-| Allowed order types | market, limit (auto-place: limit only) |
-| Allowed trading hours | regular US session only (no extended hours) |
+| Allowed order types | notional market (auto); limit allowed only with confirm |
+| Allowed trading hours | regular US session only (notional/fractional require it) |
 
 > Note: per-order cap $100 × 3 orders = $300 max actual daily spend; the $1,000 daily total
 > is a hard ceiling that also covers any larger confirm-required orders.

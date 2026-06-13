@@ -38,8 +38,10 @@ Only trade these symbols. Anything else requires explicit user instruction.
 
 ## Entry rules
 
-- **Buy-the-dip accumulation.** Place a $100 buy when a universe symbol trades **≥ 5% below
-  its trailing 20-day high** (use `historicals` to compute the 20-day high).
+- **Buy-the-dip accumulation.** Place a **$100 notional market buy** (regular hours) when a
+  universe symbol trades **≥ 5% below its trailing 20-day high** (use `historicals` to
+  compute the 20-day high). Notional orders must be `type=market` — see the order-mechanics
+  note below.
 - **Pace:** at most **1 add per symbol per calendar week**.
 - **Averaging down:** at most **2 total $100 adds per symbol** before an exit — this also
   keeps each position within the 20% (≈$200) cap in `config/guardrails.md`.
@@ -66,13 +68,19 @@ Days to a few weeks (swing). Not intraday; not indefinite buy-and-hold.
 - No symbols outside the universe without explicit user instruction.
 - No order that violates `config/guardrails.md`.
 
-## Open item — fractional / notional orders
+## Order mechanics — notional market orders (verified 2026-06-13)
 
-Most universe symbols trade above $100/share (AAPL ~$291, NVDA ~$205, META ~$567), so a
-$100 order requires **fractional (dollar-based / notional)** buys. Before the first live
-order, verify via `review_equity_order` that the Robinhood Agentic account supports notional
-orders. If it does not, either raise the per-order cap (guardrails) or restrict the universe
-to sub-$100 symbols — decide with the user.
+Verified via `review_equity_order` on the Agentic account: **$100 notional buys are
+supported, but only as `type=market` in regular hours** (Robinhood restricts notional /
+fractional orders to market + regular session; limit orders need a whole-share quantity).
+Since every universe symbol trades > $100/share, entries are placed as **$100 notional
+market orders**. This is acceptable only because the universe is restricted to ultra-liquid
+mega-caps/ETFs with ~0.1% bid/ask spreads (negligible slippage). Never auto-place a market
+order on an illiquid symbol.
+
+Implication: the agent can only trade during regular US market hours. A scheduled
+`portfolio-review` may run after close (read-only), but any resulting buy executes next
+regular session.
 
 ## Notes
 
