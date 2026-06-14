@@ -22,7 +22,9 @@ not as new repos.
 | `config/guardrails.md` | Hard safety limits + confirmation policy | No |
 | `skills/trade/SKILL.md` | Order flow: review → confirm → place → log | No |
 | `skills/portfolio-review/SKILL.md` | Periodic portfolio/market check → md report | No |
+| `skills/reconcile/SKILL.md` | Drift check: Robinhood live vs manual Google Sheet | No |
 | `skills/log/SKILL.md` | Append-only md log format contract | No |
+| `config/holdings-sheet.md` | Sheet fileId, account mapping, drift thresholds | Robinhood map |
 | `providers/_contract.md` | Abstract interface every provider must satisfy | No |
 | `providers/<broker>/adapter.md` | Maps broker tools ↔ the contract | **Yes** |
 | `providers/<broker>/capabilities.md` | What the broker can/can't do | **Yes** |
@@ -45,7 +47,8 @@ after the US close)** via a macOS LaunchAgent.
 
 - Runner: [`scripts/run-review.sh`](scripts/run-review.sh) — invokes headless `claude -p`,
   which queries Robinhood **live** (no local data store), computes dip signals, writes a
-  dated report to `logs/reviews/`, and commits.
+  dated report to `logs/reviews/`, **reconciles Robinhood vs the Google Sheet** into
+  `logs/reconcile/`, and commits.
 - Schedule: [`scripts/com.jackpark.trading-agent-review.plist`](scripts/com.jackpark.trading-agent-review.plist)
   (tracked copy; the active copy lives in `~/Library/LaunchAgents/`).
 - **Read-only by construction:** the runner whitelists only Robinhood *read* tools + file
