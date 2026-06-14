@@ -29,6 +29,10 @@ GIT="$(command -v git || echo /usr/bin/git)"
 
 cd "$REPO" || exit 1
 
+# Stay in sync with the remote so the post-run push fast-forwards cleanly even if
+# another machine (or a manual commit) pushed since the last run.
+"$GIT" pull --rebase --autostash --quiet 2>/dev/null || true
+
 TODAY="$(date +%Y-%m-%d)"
 NOW="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 RUNLOG="$REPO/logs/cron/${TODAY}.run.log"

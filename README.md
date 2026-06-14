@@ -43,7 +43,25 @@ Keep the contract thin — refine it only when a second provider actually lands.
 ## Scheduled review (local launchd)
 
 A read-only `portfolio-review` runs automatically on weekdays at **13:30 PT (16:30 ET, 30 min
-after the US close)** via a macOS LaunchAgent.
+after the US close)** via a macOS LaunchAgent, hosted on the always-on iMac
+(`hermes-runner@imac-hermes`) so it isn't skipped when the laptop is asleep.
+
+**Install / move the job to a host** (run on that machine, logged in as the owning user):
+
+```bash
+git clone git@github.com:jack-h-park/trading-agent.git ~/workspace/ai-assets/jackhpark-trading-agent
+cd ~/workspace/ai-assets/jackhpark-trading-agent
+# Claude must be logged into the SAME claude.ai account (so the Robinhood + Google Drive
+# connectors are available). Verify, then install the LaunchAgent:
+bash scripts/install-launchd.sh
+# Test in the GUI session (Keychain/connectors only work there, not over plain ssh):
+launchctl kickstart -k gui/$(id -u)/com.jackpark.trading-agent-review
+```
+
+> **Keychain note:** Claude stores its OAuth token in the macOS login Keychain, which is only
+> accessible from the **GUI login session** (where launchd LaunchAgents run) — not from a
+> non-interactive `ssh` shell. So `claude -p` works under launchd but a bare ssh test shows
+> "Not logged in". Verify via `launchctl kickstart`, not ssh.
 
 - Runner: [`scripts/run-review.sh`](scripts/run-review.sh) — invokes headless `claude -p`,
   which queries Robinhood **live** (no local data store), computes dip signals, writes a
