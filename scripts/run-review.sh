@@ -36,6 +36,7 @@ cd "$REPO" || exit 1
 TODAY="$(date +%Y-%m-%d)"
 NOW="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 RUNLOG="$REPO/logs/cron/${TODAY}.run.log"
+mkdir -p "$REPO/logs/cron" "$REPO/logs/digest"
 
 echo "===== run-review start $NOW =====" >> "$RUNLOG"
 
@@ -57,7 +58,8 @@ Steps:
 4. Apply guardrails (3 orders/day max, \$100 each, 20% position cap). Build the prioritized action list by following the 'Prioritization (deterministic)' section of policy.md EXACTLY: rank eligible signals by drawdown depth (deepest first), tie-break alphabetically, take the top N = remaining order slots. Do NOT reorder by conviction, news, or any qualitative judgment. Show the drawdown number used for each rank so the ordering is auditable. Any qualitative context goes only in a 'Flags' note to the user, never changing the ranked list.
 5. Write the report to logs/reviews/${TODAY}.md following the format in skills/log/SKILL.md (append a timestamped section if the file already exists). PROPOSALS ONLY.
 6. RECONCILE: read skills/reconcile/SKILL.md and config/holdings-sheet.md. Using get_equity_positions for the Long-term and Mid-term accounts in the mapping, and the Google Drive tool mcp__claude_ai_Google_Drive__read_file_content to read the sheet fileId, diff Robinhood live positions against the sheet per the thresholds. Write the drift report to logs/reconcile/${TODAY}.md. Report only — do NOT write to the sheet.
-7. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit'. Then 'git push' (ignore push failure).
+7. DIGEST: write a concise plain-text notification digest to logs/digest/${TODAY}.md (overwrite if it exists), <= 1400 characters, formatted for a Telegram push. Include: a one-line header 'Trading review ${TODAY}'; the ranked BUY proposals as 'BUY \$100 <SYM> (<drawdown>%)' lines (or 'No buy signals'); any SELL/exit proposals on open positions (or omit if none); and a final 'Reconcile: <N> drift alert(s)' or 'Reconcile: no drift' line. Plain text only, no markdown tables. This file is for notification delivery and is NOT committed.
+8. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit'. Then 'git push' (ignore push failure). Do NOT git add logs/digest.
 
 CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circumstances. Do not call place_equity_order or cancel_equity_order. Do not write to the Google Sheet."
 
