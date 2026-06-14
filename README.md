@@ -4,6 +4,14 @@ Skill-centric operating layer for **agentic brokerage trading**. Robinhood is th
 connected provider; the repo is designed so additional brokerages plug in as *providers*,
 not as new repos.
 
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) — system design, provider abstraction, data
+  flow, control flow, safety model.
+- [docs/operations.md](docs/operations.md) — runbook: schedule, hosting, install/move,
+  verification, troubleshooting, placing a live trade.
+- [docs/decisions.md](docs/decisions.md) — decision log with rationale for each major choice.
+
 ## What this repo is
 
 - **Operating layer, not a code platform.** Trading execution happens through a connected
