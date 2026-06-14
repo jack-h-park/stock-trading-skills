@@ -7,14 +7,25 @@
 # *read* tools + file write + git. place_equity_order / cancel_equity_order are
 # NOT whitelisted, so this scheduled job physically cannot trade.
 #
-# Invoked by ~/Library/LaunchAgents/com.jackpark.trading-agent-review.plist
+# Invoked by the LaunchAgent installed via scripts/install-launchd.sh.
+#
+# Host-portable: resolves its own repo location and finds claude/git on any Mac
+# (no hardcoded username/paths), so it runs on the MacBook or the always-on iMac.
 
 set -uo pipefail
 
-export PATH="/Users/jackpark/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-REPO="/Users/jackpark/workspace/ai-assets/jackhpark-trading-agent"
-CLAUDE="/Users/jackpark/.local/bin/claude"
-GIT="/usr/bin/git"
+# Resolve repo from this script's location (scripts/ -> repo root).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
+
+# launchd runs with a minimal PATH; enrich it for common install locations.
+for d in "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin "$HOME/.hermes/node/bin" "$HOME/.npm-global/bin"; do
+  [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH";; esac
+done
+export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
+
+CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
+GIT="$(command -v git || echo /usr/bin/git)"
 
 cd "$REPO" || exit 1
 
