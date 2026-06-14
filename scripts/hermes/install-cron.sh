@@ -30,7 +30,7 @@ SCHEDULE="30 13 * * 1-5"   # weekdays 13:30 local (= 16:30 ET, 30 min after US c
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="${TRADING_AGENT_REPO:-$(cd "$HERE/../.." && pwd)}"
-SCRIPTS_DIR="$HOME/.hermes/scripts"
+SCRIPTS_DIR="$HOME/.hermes/profiles/$PROFILE/scripts"   # Hermes --script resolves under $HERMES_HOME
 WRAPPER_SRC="$HERE/trading-review-cron.sh"
 WRAPPER_DST="$SCRIPTS_DIR/trading-review-cron.sh"
 
@@ -39,7 +39,8 @@ hermes() { "$PY" -m hermes_cli.main "$@"; }
 
 [ -f "$WRAPPER_SRC" ] || { echo "wrapper not found: $WRAPPER_SRC" >&2; exit 1; }
 
-# 1. Install the wrapper into ~/.hermes/scripts/ (Hermes --script resolves here).
+# 1. Install the wrapper into the PROFILE's scripts dir. Hermes resolves --script
+#    relative to $HERMES_HOME (= the profile root), i.e. <profile>/scripts/.
 mkdir -p "$SCRIPTS_DIR"
 cp "$WRAPPER_SRC" "$WRAPPER_DST"
 chmod +x "$WRAPPER_DST"
