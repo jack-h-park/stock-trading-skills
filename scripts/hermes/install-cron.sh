@@ -46,6 +46,14 @@ cp "$WRAPPER_SRC" "$WRAPPER_DST"
 chmod +x "$WRAPPER_DST"
 echo "installed wrapper -> $WRAPPER_DST"
 
+# 1b. Profile runtime settings for clean, schedulable delivery (idempotent):
+#     - cron_mode allow: let cron jobs run without per-tick approval
+#     - cron.wrap_response false: deliver raw script stdout (no "Cronjob Response /
+#       To stop or manage this job" boilerplate around the digest)
+hermes --profile "$PROFILE" config set approvals.cron_mode allow >/dev/null 2>&1 || true
+hermes --profile "$PROFILE" config set cron.wrap_response false >/dev/null 2>&1 || true
+echo "set approvals.cron_mode=allow, cron.wrap_response=false"
+
 # 2. Create the cron job PAUSED, unless it already exists (idempotent).
 EXISTING="$(hermes --profile "$PROFILE" cron list 2>/dev/null || true)"
 if grep -qF "$JOB_NAME" <<<"$EXISTING"; then
