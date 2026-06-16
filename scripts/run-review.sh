@@ -24,6 +24,10 @@ for d in "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin "$HOME/.hermes/node
 done
 export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Load CLAUDE_CODE_OAUTH_TOKEN for headless cron (macOS Keychain is not accessible
+# from launchd/cron; the token file is the durable workaround — see scripts/_env.sh).
+[ -f "$HERE/_env.sh" ] && . "$HERE/_env.sh"
+
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 GIT="$(command -v git || echo /usr/bin/git)"
 
