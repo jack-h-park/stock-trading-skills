@@ -52,6 +52,9 @@ Only trade these symbols. Anything else requires explicit user instruction.
 - **Take-profit:** trim/close a position when it reaches **+12%** from average cost.
 - **Stop-loss (single names only):** close when a single stock falls **−8%** from average
   cost. **ETFs (VOO, QQQM) have no hard stop** — hold through drawdowns.
+- **Trim & redistribute:** if a position falls **≥ 10%** below its 20-day high, trim it by
+  50% and redistribute proceeds to outperforming positions. All parameters (threshold,
+  lookback, trim size, redistribute logic, suspend conditions) are in `config/trim-policy.md`.
 - All exits (sells) are **always confirm-before-place** — never auto (see guardrails).
 
 ## Prioritization (deterministic — when signals exceed the daily order cap)
