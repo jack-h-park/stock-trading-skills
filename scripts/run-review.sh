@@ -30,6 +30,7 @@ export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 GIT="$(command -v git || echo /usr/bin/git)"
+PYTHON="$(command -v python3 || echo /usr/bin/python3)"
 
 cd "$REPO" || exit 1
 
@@ -43,6 +44,44 @@ RUNLOG="$REPO/logs/cron/${TODAY}.run.log"
 mkdir -p "$REPO/logs/cron" "$REPO/logs/digest"
 
 echo "===== run-review start $NOW =====" >> "$RUNLOG"
+
+# Build a temporary --mcp-config JSON so claude -p can reach the Robinhood and
+# Google Drive MCPs.  The Robinhood OAuth token is managed by Hermes; we read it
+# (refreshing if needed) and inject it as a Bearer token for a remote SSE server.
+# The Google Drive MCP is a local stdio Python script that uses a service-account key.
+MCP_CONFIG_FILE="/tmp/trading-review-mcp-$$.json"
+ROBINHOOD_TOKEN="$("$PYTHON" "$HERE/_get_robinhood_token.py" 2>>"$RUNLOG")"
+if [ -z "$ROBINHOOD_TOKEN" ]; then
+  echo "ERROR: could not obtain Robinhood OAuth token — aborting" >> "$RUNLOG"
+  exit 1
+fi
+GCP_SA_KEY="$HOME/.config/stock-portfolio-briefing/gcp-sheets-sa.json"
+SHEETS_MCP_SCRIPT="$REPO/scripts/mcp-google-sheets.py"
+# The Google Sheets MCP requires the Hermes venv Python (has mcp + google-auth installed).
+# Fall back to system python3 for local dev runs where the venv isn't present.
+HERMES_VENV_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python"
+[ -x "$HERMES_VENV_PYTHON" ] || HERMES_VENV_PYTHON="$PYTHON"
+"$PYTHON" - "$MCP_CONFIG_FILE" "$ROBINHOOD_TOKEN" "$HERMES_VENV_PYTHON" "$SHEETS_MCP_SCRIPT" "$GCP_SA_KEY" << 'PYEOF'
+import json, sys
+out, token, py, script, sa = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+cfg = {
+    "mcpServers": {
+        "robinhood": {
+            "type": "http",
+            "url": "https://agent.robinhood.com/mcp/trading",
+            "headers": {"Authorization": f"Bearer {token}"}
+        },
+        "google-drive": {
+            "command": py,
+            "args": [script],
+            "env": {"GOOGLE_APPLICATION_CREDENTIALS": sa}
+        }
+    }
+}
+with open(out, "w") as f:
+    json.dump(cfg, f, indent=2)
+PYEOF
+trap 'rm -f "$MCP_CONFIG_FILE"' EXIT
 
 # Skip US market holidays / weekends cheaply: launchd already restricts to Mon-Fri,
 # but skip if it's a weekend for any manual run. (Holiday skipping is left to the
@@ -59,7 +98,7 @@ PROMPT="You are running the scheduled, READ-ONLY portfolio-review for this repo'
 
 Steps:
 1. Read strategy/policy.md, config/guardrails.md, config/trim-policy.md, providers/robinhood/adapter.md, providers/robinhood/capabilities.md, and skills/portfolio-review/SKILL.md + skills/log/SKILL.md.
-2. Using the Robinhood MCP (tools are prefixed mcp__claude_ai_Robinhood__), for the Agentic account in the adapter: get_portfolio and get_equity_positions; get_equity_quotes and get_equity_historicals (interval=day, last ~30 days) for the universe symbols in policy.md.
+2. Using the Robinhood MCP (tools are prefixed mcp__robinhood__), for the Agentic account in the adapter: get_portfolio and get_equity_positions; get_equity_quotes and get_equity_historicals (interval=day, last ~30 days) for the universe symbols in policy.md.
 3. BUY SIGNALS — Compute each universe symbol's trailing 20-trading-day high and its drawdown vs the latest price. Flag a BUY signal when price is >= 5% below the 20-day high, per policy.md entry rules.
 3b. TRIM SIGNALS — For each symbol with an open position in the Agentic account, check the trim conditions from config/trim-policy.md:
     a. Skip if: position market value < minimum, kill-switch active, position was opened < 3 calendar days ago, or a stop-loss/take-profit signal already applies (use the stronger exit).
@@ -69,7 +108,7 @@ Steps:
     e. Show all numbers explicitly so the proposal is fully auditable: symbol, 20-day high, current price, drawdown %, shares to sell, estimated proceeds, redistribute-to list with dollar amounts.
 4. Apply guardrails to BUY signals only (3 orders/day max, \$100 each, 20% position cap). Build the prioritized BUY list per the Prioritization section of policy.md. TRIM signals are not subject to the buy order cap — they are exits. Show the drawdown number for each ranked BUY. Qualitative context goes only in a Flags note, never changes the ranked list.
 5. Write the report to logs/reviews/${TODAY}.md following the format in skills/log/SKILL.md (append a timestamped section if the file already exists). Include both BUY proposals and TRIM+REDISTRIBUTE proposals in separate sections. PROPOSALS ONLY.
-6. RECONCILE: read skills/reconcile/SKILL.md and config/holdings-sheet.md. Using get_equity_positions for the Long-term and Mid-term accounts in the mapping, and the Google Drive tool mcp__claude_ai_Google_Drive__read_file_content to read the sheet fileId, diff Robinhood live positions against the sheet per the thresholds. Write the drift report to logs/reconcile/${TODAY}.md. Report only — do NOT write to the sheet.
+6. RECONCILE: read skills/reconcile/SKILL.md and config/holdings-sheet.md. Using get_equity_positions for the Long-term and Mid-term accounts in the mapping, and the mcp__google-drive__read_holdings tool (reads the full holdings sheet automatically; use mcp__google-drive__read_sheet if you need a custom range), diff Robinhood live positions against the sheet per the thresholds. Write the drift report to logs/reconcile/${TODAY}.md. Report only — do NOT write to the sheet.
 7. BRIEFING CONTEXT: read ~/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json (if it exists). Extract the macro, moverNotes, and actions fields. Identify any items directly relevant to the universe symbols or current open positions. Keep at most 2 relevant observations. If the file does not exist, skip silently.
 8. DIGEST: write a notification digest to logs/digest/${TODAY}.md (overwrite if it exists), <= 1800 characters, for a Telegram push. Conversational tone — brief note from a trading assistant to Jack. Warm but concise; a little personality is fine; no markdown tables, no robotic headers.
    REQUIREMENTS — these exact facts must appear verbatim (do not paraphrase numbers):
@@ -85,16 +124,17 @@ CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circums
 
 "$CLAUDE" -p "$PROMPT" \
   --output-format text \
+  --mcp-config "$MCP_CONFIG_FILE" \
   --allowedTools \
-    "mcp__claude_ai_Robinhood__get_accounts" \
-    "mcp__claude_ai_Robinhood__get_portfolio" \
-    "mcp__claude_ai_Robinhood__get_equity_positions" \
-    "mcp__claude_ai_Robinhood__get_equity_quotes" \
-    "mcp__claude_ai_Robinhood__get_equity_historicals" \
-    "mcp__claude_ai_Robinhood__get_equity_orders" \
-    "mcp__claude_ai_Robinhood__get_equity_tradability" \
-    "mcp__claude_ai_Google_Drive__read_file_content" \
-    "mcp__claude_ai_Google_Drive__get_file_metadata" \
+    "mcp__robinhood__get_accounts" \
+    "mcp__robinhood__get_portfolio" \
+    "mcp__robinhood__get_equity_positions" \
+    "mcp__robinhood__get_equity_quotes" \
+    "mcp__robinhood__get_equity_historicals" \
+    "mcp__robinhood__get_equity_orders" \
+    "mcp__robinhood__get_equity_tradability" \
+    "mcp__google-drive__read_holdings" \
+    "mcp__google-drive__read_sheet" \
     "Read" "Write" "Edit" "Grep" "Glob" \
     "Bash(git add:*)" "Bash(git commit:*)" "Bash(git push:*)" "Bash(git status:*)" \
   >> "$RUNLOG" 2>&1
