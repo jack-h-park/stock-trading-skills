@@ -43,6 +43,29 @@ NOW="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 RUNLOG="$REPO/logs/cron/${TODAY}.run.log"
 mkdir -p "$REPO/logs/cron" "$REPO/logs/digest"
 
+# Phase 3 — append this run's `claude -p` token usage to the shared trader usage
+# log, read by the hermes usage-collector → PM Observatory /usage (Trading system).
+# Best-effort: any failure is swallowed so it can never break the review run.
+_log_trader_usage() {
+  local job="$1" resp="$2"
+  local logfile="${TRADER_USAGE_LOG:-$HOME/.hermes/logs/trader-usage.jsonl}"
+  mkdir -p "$(dirname "$logfile")" 2>/dev/null || true
+  printf '%s' "$resp" | "$PYTHON" -c '
+import json, sys, datetime
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+u = d.get("usage", {}) or {}
+mu = d.get("modelUsage", {}) or {}
+model = next(iter(mu), "") if isinstance(mu, dict) and mu else ""
+rec = {"date": datetime.date.today().isoformat(), "job": sys.argv[1], "model": model,
+       "input_tokens": u.get("input_tokens", 0) or 0, "output_tokens": u.get("output_tokens", 0) or 0,
+       "cache_read_tokens": u.get("cache_read_input_tokens", 0) or 0, "cost_usd": d.get("total_cost_usd", 0) or 0}
+open(sys.argv[2], "a").write(json.dumps(rec) + "\n")
+' "$job" "$logfile" 2>/dev/null || true
+}
+
 echo "===== run-review start $NOW =====" >> "$RUNLOG"
 
 # Build a temporary --mcp-config JSON so claude -p can reach the Robinhood and
@@ -122,8 +145,12 @@ Steps:
 
 CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circumstances. Do not call place_equity_order or cancel_equity_order. Do not write to the Google Sheet."
 
-"$CLAUDE" -p "$PROMPT" \
-  --output-format text \
+# --output-format json: the agent still does its real work via the Write tool
+# (logs/reviews, logs/reconcile) + git; stdout is just the run-log record here, so
+# switching text→json is safe and lets us capture token usage. stdout (the JSON
+# result) is captured; stderr (progress) still streams to the run log.
+REVIEW_JSON="$("$CLAUDE" -p "$PROMPT" \
+  --output-format json \
   --mcp-config "$MCP_CONFIG_FILE" \
   --allowedTools \
     "mcp__robinhood__get_accounts" \
@@ -137,8 +164,10 @@ CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circums
     "mcp__google-drive__read_sheet" \
     "Read" "Write" "Edit" "Grep" "Glob" \
     "Bash(git add:*)" "Bash(git commit:*)" "Bash(git push:*)" "Bash(git status:*)" \
-  >> "$RUNLOG" 2>&1
+  2>>"$RUNLOG")"
 
 RC=$?
+printf '%s\n' "$REVIEW_JSON" >> "$RUNLOG"
+_log_trader_usage "trading-review" "$REVIEW_JSON"
 echo "===== run-review end rc=$RC $(date '+%H:%M:%S %Z') =====" >> "$RUNLOG"
 exit $RC
