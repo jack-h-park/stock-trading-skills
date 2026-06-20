@@ -18,6 +18,19 @@ RUNNER="$REPO/scripts/run-review.sh"
 DATE_ISO="$(date +%F)"
 RUNLOG="$REPO/logs/cron/${DATE_ISO}.run.log"
 
+# Enrich PATH so python3 is reachable (hermes cron runs with a minimal PATH).
+for _d in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin"; do
+  [ -d "$_d" ] && case ":$PATH:" in *":$_d:"*) ;; *) PATH="$_d:$PATH";; esac
+done
+export PATH="$PATH:/usr/bin:/bin"
+unset _d
+
+# Skip on non-NYSE trading days and notify so the skip is visible in Telegram.
+if ! python3 "$REPO/scripts/hermes/market-check.py" 2>/dev/null; then
+  echo "📅 ${DATE_ISO} 주식 개장일이 아니어서 오늘 trading review는 진행하지 않았습니다."
+  exit 0
+fi
+
 [ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: runner not found at $RUNNER" >&2; exit 1; }
 
 # Run the review+reconcile. It self-logs to logs/cron/<date>.run.log and emits no
