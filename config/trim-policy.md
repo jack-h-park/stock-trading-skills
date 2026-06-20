@@ -8,7 +8,7 @@ up the new values automatically. No code changes required.
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Drawdown threshold | **10%** below recent high | If current price <= (recent high x 0.90), flag TRIM |
+| Drawdown threshold | **10%** below recent high | If current price ≤ (recent high × 0.90), flag TRIM |
 | Recent-high lookback | **20 trading days** | Same window as BUY signal; use `historicals interval=day` |
 | Trim size | **50%** of current shares held | Round down to whole shares |
 | Minimum position value | **$150** | Skip TRIM if current market value < this (not worth the friction) |
@@ -20,9 +20,9 @@ up the new values automatically. No code changes required.
 The TRIM signal is **momentum-based** (price vs recent high), distinct from the
 existing exits which are **cost-basis-based** (price vs average cost):
 
-- Stop-loss (single names, -8% from avg cost): close the whole position — still applies, unchanged
-- Take-profit (+12% from avg cost): trim/close — still applies, unchanged
-- TRIM (this policy, -10% from recent high): trim 50% — new, may trigger before or after the above
+- Stop-loss (single names, -8% from avg cost): close the whole position → still applies, unchanged
+- Take-profit (+12% from avg cost): trim/close → still applies, unchanged
+- TRIM (this policy, -10% from recent high): trim 50% → new, may trigger before or after the above
 
 When multiple exit signals fire on the same symbol in the same review, apply the
 **most aggressive** one (i.e. stop-loss or take-profit override the 50% trim).
@@ -34,11 +34,11 @@ session (or next regular session if after hours).
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Outperformance metric | Total return since purchase vs portfolio average | `(current price - avg cost) / avg cost` for each position; compare to mean |
+| Outperformance metric | Total return since purchase vs portfolio average | `(current price − avg cost) / avg cost` for each position; compare to mean |
 | Eligible recipients | Positions with return > portfolio average AND within the universe | Must be a symbol in `strategy/policy.md` universe |
 | Allocation method | Equal split among eligible recipients | Round each allocation to whole dollars; remainder held as cash |
 | Minimum allocation per recipient | **$50** | If split < $50, reduce recipient count (drop lowest outperformer first) |
-| Fallback — no outperformers | Hold proceeds as cash | Do not force-allocate; surface in digest as proceeds held as cash |
+| Fallback — no outperformers | Hold proceeds as cash | Do not force-allocate; surface in digest as "proceeds held as cash" |
 | Fallback — no positions yet | Apply to top BUY signal candidates | Use the same ranked BUY list from the main review |
 
 ## Guardrail interaction
