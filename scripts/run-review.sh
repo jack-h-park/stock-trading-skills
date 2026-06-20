@@ -51,7 +51,7 @@ _log_trader_usage() {
   local logfile="${TRADER_USAGE_LOG:-$HOME/.hermes/logs/trader-usage.jsonl}"
   mkdir -p "$(dirname "$logfile")" 2>/dev/null || true
   printf '%s' "$resp" | "$PYTHON" -c '
-import json, sys, datetime
+import json, os, sys, datetime
 try:
     d = json.load(sys.stdin)
 except Exception:
@@ -61,7 +61,8 @@ mu = d.get("modelUsage", {}) or {}
 model = next(iter(mu), "") if isinstance(mu, dict) and mu else ""
 rec = {"date": datetime.date.today().isoformat(), "job": sys.argv[1], "model": model,
        "input_tokens": u.get("input_tokens", 0) or 0, "output_tokens": u.get("output_tokens", 0) or 0,
-       "cache_read_tokens": u.get("cache_read_input_tokens", 0) or 0, "cost_usd": d.get("total_cost_usd", 0) or 0}
+       "cache_read_tokens": u.get("cache_read_input_tokens", 0) or 0, "cost_usd": d.get("total_cost_usd", 0) or 0,
+       "env": os.environ.get("TRADER_ENV", "prod")}
 open(sys.argv[2], "a").write(json.dumps(rec) + "\n")
 ' "$job" "$logfile" 2>/dev/null || true
 }
