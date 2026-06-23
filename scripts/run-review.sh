@@ -133,16 +133,31 @@ Steps:
 4. Apply guardrails to BUY signals only (3 orders/day max, \$100 each, 20% position cap). Build the prioritized BUY list per the 'Prioritization (deterministic)' section of policy.md. TRIM signals are not subject to the buy order cap — they are exits. Show the drawdown number for each ranked BUY. Qualitative context goes only in 'Flags', never changes the ranked list.
 5. Write the report to logs/reviews/${TODAY}.md following the format in skills/log/SKILL.md (append a timestamped section if the file already exists). Include both BUY proposals and TRIM+REDISTRIBUTE proposals in separate sections. PROPOSALS ONLY.
 6. RECONCILE: read skills/reconcile/SKILL.md and config/holdings-sheet.md. Using get_equity_positions for the Long-term and Mid-term accounts in the mapping, and the mcp__google-drive__read_holdings tool (reads the full holdings sheet automatically; use mcp__google-drive__read_sheet if you need a custom range), diff Robinhood live positions against the sheet per the thresholds. Write the drift report to logs/reconcile/${TODAY}.md. Report only — do NOT write to the sheet.
-7. BRIEFING CONTEXT: read ~/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json (if it exists). Extract the macro, moverNotes, and actions fields. Identify any items directly relevant to the universe symbols or current open positions. Keep at most 2 relevant observations. If the file does not exist, skip silently.
-8. DIGEST: write a notification digest to logs/digest/${TODAY}.md (overwrite if it exists), <= 1800 characters, for a Telegram push. Conversational tone — brief note from a trading assistant to Jack. Warm but concise; a little personality is fine; no markdown tables, no robotic headers.
+7. FULL PORTFOLIO OVERVIEW: Build a comprehensive view across ALL of Jack's accounts.
+   a. From the Google Sheet data read in step 6 (re-use; do not re-fetch unless missing), extract every account section: Robinhood Long-term, Robinhood Mid-term, and any external brokerage sections present (Chase, Fidelity, Merrill). External brokerage data reflects the sheet only — no API available.
+   b. For Robinhood Long-term (••••9965) and Mid-term (••••1478): use the live positions already fetched in step 6 (get_equity_positions) for quantity and avg_buy_price — these are more accurate than the sheet.
+   c. Compile a deduplicated list of ALL unique symbols across every account.
+   d. Call get_equity_quotes for all unique symbols in one or more batches to get current prices. (You may reuse quotes already fetched in step 2 for Agentic universe symbols.)
+   e. For each position compute: current_value = qty × current_price; unrealized_pl_pct = (current_price − avg_cost) / avg_cost × 100. Use API avg_buy_price for Robinhood accounts; use sheet avg_cost for external accounts.
+   f. Per-account totals: sum current_value for all positions in each account. If the sheet shows a cash row, include it.
+   g. Cross-account grand total: sum all per-account totals.
+   h. Highlights — flag these regardless of account (label as 'FYI — Jack to review manually'):
+      - Any position with unrealized P/L ≤ −15% (significant drawdown from cost basis).
+      - Any position with unrealized P/L ≥ +50% (substantial gain; potential rebalance candidate).
+      - Top 5 positions by current value across all accounts.
+   i. Append a 'Full Portfolio Overview' section to logs/reviews/${TODAY}.md with: (1) account-by-account summary table (account | # positions | total value), (2) cross-account grand total, (3) highlights table. This section is informational only — all proposals and execution remain scoped to the Agentic account.
+8. BRIEFING CONTEXT: read ~/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json (if it exists). Extract the macro, moverNotes, and actions fields. Identify any items directly relevant to the universe symbols or current open positions. Keep at most 2 relevant observations. If the file does not exist, skip silently.
+9. DIGEST: write a notification digest to logs/digest/${TODAY}.md (overwrite if it exists), <= 1800 characters, for a Telegram push. Conversational tone — brief note from a trading assistant to Jack. Warm but concise; a little personality is fine; no markdown tables, no robotic headers.
    REQUIREMENTS — these exact facts must appear verbatim (do not paraphrase numbers):
+   - Opening line: total portfolio value across ALL accounts (e.g. 'Total portfolio: \$X across N accounts')
    - Every ranked BUY proposal as '\$100 <SYM> (<drawdown>%)'
    - Every TRIM proposal as 'TRIM <SYM> <shares>sh (~\$<proceeds>) — <drawdown>% below 20d high' followed by 'REDISTRIBUTE → <SYM> \$<amount>, <SYM> \$<amount>' (or 'proceeds held as cash' if no recipients)
    - Whether there are no TRIM signals (say so explicitly)
    - Reconcile outcome (exact drift-alert count or that the sheet matches)
+   - If any position flagged in step 7h (notable drawdown or gain), include a one-line summary: e.g. '⚠️ N positions flagged across all accounts — see full review'
    - Note that all are proposals only; execution happens in the interactive session with Jack's confirmation
-   Lead with a one-line human summary. If the briefing had relevant observations (step 7), add a short '📰 Briefing note:' at the end — max 2 items, plain prose. End with a short non-pushy reminder that nothing executes automatically. This file is for notification delivery and is NOT committed.
-9. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit'. Then 'git push' (ignore push failure). Do NOT git add logs/digest.
+   Lead with a one-line human summary. If the briefing had relevant observations (step 8), add a short '📰 Briefing note:' at the end — max 2 items, plain prose. End with a short non-pushy reminder that nothing executes automatically. This file is for notification delivery and is NOT committed.
+10. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit'. Then 'git push' (ignore push failure). Do NOT git add logs/digest.
 
 CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circumstances. Do not call place_equity_order or cancel_equity_order. Do not write to the Google Sheet."
 

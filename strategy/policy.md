@@ -4,10 +4,15 @@ Broker-agnostic trading rules. The agent must read this before any order flow or
 
 ## Scope — which account
 
-Trading happens **only** in the Robinhood **Agentic** cash account `<AGENTIC_ACCOUNT>`
-(`agentic_allowed: true`). The user's other accounts (Mid-term `<MIDTERM_ACCOUNT>`,
-Long-term `<LONGTERM_ACCOUNT>`, and external brokerages tracked in the holdings sheet) are
-**reference only** — the agent must never attempt to trade them.
+**Trading** happens **only** in the Robinhood **Agentic** cash account `<AGENTIC_ACCOUNT>`
+(`agentic_allowed: true`). BUY/TRIM proposals and order execution are restricted to
+this account.
+
+**Review** covers all of Jack's accounts: Robinhood Long-term (`<MIDTERM_ACCOUNT>`),
+Robinhood Mid-term (`<LONGTERM_ACCOUNT>`), and external brokerages (Chase, Fidelity, Merrill)
+tracked in the holdings sheet. These accounts are read-only — the agent surfaces
+informational flags (notable drawdowns or gains) but never proposes or executes
+orders against them. Jack acts on those flags manually.
 
 Starting state (2026-06-13): **$1,000 cash, no positions.** This is a small rule-based
 swing/accumulation sleeve, separate from the user's main long-term portfolio.
