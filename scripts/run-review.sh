@@ -3,9 +3,23 @@
 # Runs headless `claude -p` to: query Robinhood (live), compute dip signals,
 # write a dated markdown review to logs/reviews/, and commit.
 #
+# PARALLEL FAN-OUT (2026-06-30): the review was a single sequential `claude -p`
+# doing 10 steps in one agentic loop (~21 min on 2026-06-30, which overran the
+# Hermes cron `script_timeout_seconds`). It is now decomposed into three
+# INDEPENDENT read-only sub-jobs that run concurrently, each writing its own file
+# (no shared-file or git races), followed by a small deterministic merge + a thin
+# digest/commit step. Wall-clock drops from sum(A,B,C) to roughly max(A,B,C).
+#   A — signals: Agentic BUY/TRIM proposals      -> logs/reviews/<date>.md
+#   B — reconcile: live positions vs holdings sheet -> logs/reconcile/<date>.md
+#   C — overview: full cross-account portfolio view -> logs/reviews/<date>.overview.md
+#   merge+digest: assemble overview into the review, write the Telegram digest,
+#                 and do the single git add/commit/push.
+#
 # READ-ONLY BY DESIGN: the --allowedTools whitelist below grants only Robinhood
 # *read* tools + file write + git. place_equity_order / cancel_equity_order are
-# NOT whitelisted, so this scheduled job physically cannot trade.
+# NOT whitelisted, so this scheduled job physically cannot trade. Only the final
+# digest step is granted git; A/B/C cannot commit, which is what keeps them
+# race-free when run in parallel.
 #
 # Invoked by the LaunchAgent installed via scripts/install-launchd.sh.
 #
@@ -41,7 +55,11 @@ cd "$REPO" || exit 1
 TODAY="$(date +%Y-%m-%d)"
 NOW="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 RUNLOG="$REPO/logs/cron/${TODAY}.run.log"
-mkdir -p "$REPO/logs/cron" "$REPO/logs/digest"
+mkdir -p "$REPO/logs/cron" "$REPO/logs/digest" "$REPO/logs/reviews" "$REPO/logs/reconcile"
+
+REVIEW_FILE="$REPO/logs/reviews/${TODAY}.md"
+OVERVIEW_FILE="$REPO/logs/reviews/${TODAY}.overview.md"
+RECONCILE_FILE="$REPO/logs/reconcile/${TODAY}.md"
 
 # Phase 3 — append this run's `claude -p` token usage to the shared trader usage
 # log, read by the hermes usage-collector → PM Observatory /usage (Trading system).
@@ -73,6 +91,7 @@ echo "===== run-review start $NOW =====" >> "$RUNLOG"
 # Google Drive MCPs.  The Robinhood OAuth token is managed by Hermes; we read it
 # (refreshing if needed) and inject it as a Bearer token for a remote SSE server.
 # The Google Drive MCP is a local stdio Python script that uses a service-account key.
+# All three parallel jobs share this one config (read-only tools only).
 MCP_CONFIG_FILE="/tmp/trading-review-mcp-$$.json"
 ROBINHOOD_TOKEN="$("$PYTHON" "$HERE/_get_robinhood_token.py" 2>>"$RUNLOG")"
 if [ -z "$ROBINHOOD_TOKEN" ]; then
@@ -105,7 +124,13 @@ cfg = {
 with open(out, "w") as f:
     json.dump(cfg, f, indent=2)
 PYEOF
-trap 'rm -f "$MCP_CONFIG_FILE"' EXIT
+
+# Per-job temp files for the three parallel agents' result JSON + stderr streams.
+TMP_A_JSON="/tmp/trading-review-A-$$.json"; TMP_A_ERR="/tmp/trading-review-A-$$.err"
+TMP_B_JSON="/tmp/trading-review-B-$$.json"; TMP_B_ERR="/tmp/trading-review-B-$$.err"
+TMP_C_JSON="/tmp/trading-review-C-$$.json"; TMP_C_ERR="/tmp/trading-review-C-$$.err"
+TMP_D_JSON="/tmp/trading-review-D-$$.json"; TMP_D_ERR="/tmp/trading-review-D-$$.err"
+trap 'rm -f "$MCP_CONFIG_FILE" "$TMP_A_JSON" "$TMP_A_ERR" "$TMP_B_JSON" "$TMP_B_ERR" "$TMP_C_JSON" "$TMP_C_ERR" "$TMP_D_JSON" "$TMP_D_ERR"' EXIT
 
 # Skip US market holidays / weekends cheaply: launchd already restricts to Mon-Fri,
 # but skip if it's a weekend for any manual run. (Holiday skipping is left to the
@@ -116,9 +141,31 @@ if [ "$DOW" -ge 6 ] && [ "${FORCE:-0}" != "1" ]; then
   exit 0
 fi
 
-# NOTE: internal double-quotes inside the PROMPT string must be escaped as \".
+# Shared read-only toolset for the three parallel agents. NO git here — only the
+# final digest step commits, so A/B/C cannot race on the index.
+# NOTE: internal double-quotes inside the prompt strings must be escaped as \".
 # Dollar signs passed literally to Claude must be escaped as \$.
-PROMPT="You are running the scheduled, READ-ONLY portfolio-review for this repo's Robinhood Agentic trading account. Today is ${TODAY}.
+READ_ALLOWED=(
+  "mcp__robinhood__get_accounts"
+  "mcp__robinhood__get_portfolio"
+  "mcp__robinhood__get_equity_positions"
+  "mcp__robinhood__get_equity_quotes"
+  "mcp__robinhood__get_equity_historicals"
+  "mcp__robinhood__get_equity_orders"
+  "mcp__robinhood__get_equity_tradability"
+  "mcp__google-drive__read_holdings"
+  "mcp__google-drive__read_sheet"
+  "Read" "Write" "Edit" "Grep" "Glob"
+)
+DIGEST_ALLOWED=(
+  "Read" "Write" "Edit" "Grep" "Glob"
+  "Bash(git add:*)" "Bash(git commit:*)" "Bash(git push:*)" "Bash(git status:*)"
+)
+
+CRITICAL_RO="CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circumstances. Do not call place_equity_order or cancel_equity_order. Do not write to the Google Sheet. Do NOT run any git command — committing is handled by a separate step."
+
+# ── Job A — Agentic BUY/TRIM signals + review ────────────────────────────────
+PROMPT_A="You are running the scheduled, READ-ONLY portfolio-review for this repo's Robinhood Agentic trading account. Today is ${TODAY}. Produce ONLY the Agentic signals report — reconcile and the cross-account overview are handled by other jobs; do not do them here.
 
 Steps:
 1. Read strategy/policy.md, config/guardrails.md, config/trim-policy.md, providers/robinhood/adapter.md, providers/robinhood/capabilities.md, and skills/portfolio-review/SKILL.md + skills/log/SKILL.md.
@@ -131,59 +178,117 @@ Steps:
     d. Compute REDISTRIBUTE allocation: split proceeds equally among recipients, rounded to whole dollars; if no recipients, mark proceeds as 'held as cash'; if any allocation < minimum, drop the lowest outperformer and recompute.
     e. Show all numbers explicitly so the proposal is fully auditable: symbol, 20-day high, current price, drawdown %, shares to sell, estimated proceeds, redistribute-to list with dollar amounts.
 4. Apply guardrails to BUY signals only (3 orders/day max, \$100 each, 20% position cap). Build the prioritized BUY list per the 'Prioritization (deterministic)' section of policy.md. TRIM signals are not subject to the buy order cap — they are exits. Show the drawdown number for each ranked BUY. Qualitative context goes only in 'Flags', never changes the ranked list.
-5. Write the report to logs/reviews/${TODAY}.md following the format in skills/log/SKILL.md (append a timestamped section if the file already exists). Include both BUY proposals and TRIM+REDISTRIBUTE proposals in separate sections. PROPOSALS ONLY.
-6. RECONCILE: read skills/reconcile/SKILL.md and config/holdings-sheet.md. Using get_equity_positions for the Long-term and Mid-term accounts in the mapping, and the mcp__google-drive__read_holdings tool (reads the full holdings sheet automatically; use mcp__google-drive__read_sheet if you need a custom range), diff Robinhood live positions against the sheet per the thresholds. Write the drift report to logs/reconcile/${TODAY}.md. Report only — do NOT write to the sheet.
-7. FULL PORTFOLIO OVERVIEW: Build a comprehensive view across ALL of Jack's accounts.
-   a. From the Google Sheet data read in step 6 (re-use; do not re-fetch unless missing), extract every account section: Robinhood Long-term, Robinhood Mid-term, and any external brokerage sections present (Chase, Fidelity, Merrill). External brokerage data reflects the sheet only — no API available.
-   b. For Robinhood Long-term (••••9965) and Mid-term (••••1478): use the live positions already fetched in step 6 (get_equity_positions) for quantity and avg_buy_price — these are more accurate than the sheet.
+5. Write the report to logs/reviews/${TODAY}.md following the format in skills/log/SKILL.md (append a timestamped section if the file already exists). Include both BUY proposals and TRIM+REDISTRIBUTE proposals in separate sections. PROPOSALS ONLY. Do not add a portfolio-overview section here. Do not commit.
+
+${CRITICAL_RO}"
+
+# ── Job B — Reconcile live positions vs the holdings sheet ────────────────────
+PROMPT_B="You are running the scheduled, READ-ONLY reconcile step for Jack's brokerage accounts. Today is ${TODAY}. Produce ONLY the reconcile drift report.
+
+Steps:
+1. Read skills/reconcile/SKILL.md and config/holdings-sheet.md.
+2. RECONCILE: using the Robinhood MCP get_equity_positions for the Long-term and Mid-term accounts in the mapping, and the mcp__google-drive__read_holdings tool (reads the full holdings sheet automatically; use mcp__google-drive__read_sheet if you need a custom range), diff Robinhood live positions against the sheet per the thresholds in the skill.
+3. Write the drift report to logs/reconcile/${TODAY}.md. Report only — do NOT write to the sheet. Do not commit.
+
+${CRITICAL_RO}"
+
+# ── Job C — Full cross-account portfolio overview (informational) ─────────────
+PROMPT_C="You are running the scheduled, READ-ONLY full-portfolio overview for Jack's accounts. Today is ${TODAY}. This is INFORMATIONAL ONLY — no proposals, no orders. Produce ONLY the overview.
+
+Steps:
+1. Read config/holdings-sheet.md and strategy/policy.md (for the account mapping and universe).
+2. FULL PORTFOLIO OVERVIEW: Build a comprehensive view across ALL of Jack's accounts.
+   a. Read the holdings sheet via mcp__google-drive__read_holdings. Extract every account section: Robinhood Long-term, Robinhood Mid-term, and any external brokerage sections present (Chase, Fidelity, Merrill). External brokerage data reflects the sheet only — no API available.
+   b. For Robinhood Long-term (••••9965) and Mid-term (••••1478): use live mcp__robinhood__get_equity_positions for quantity and avg_buy_price — these are more accurate than the sheet.
    c. Compile a deduplicated list of ALL unique symbols across every account.
-   d. Call get_equity_quotes for all unique symbols in one or more batches to get current prices. (You may reuse quotes already fetched in step 2 for Agentic universe symbols.)
+   d. Call mcp__robinhood__get_equity_quotes for all unique symbols in one or more batches to get current prices.
    e. For each position compute: current_value = qty × current_price; unrealized_pl_pct = (current_price − avg_cost) / avg_cost × 100. Use API avg_buy_price for Robinhood accounts; use sheet avg_cost for external accounts.
-   f. Per-account totals: sum current_value for all positions in each account. If the sheet shows a cash row, include it.
-   g. Cross-account grand total: sum all per-account totals.
+   e2. CASH BALANCES — for EACH Robinhood account (Agentic ••••0956, Long-term ••••9965, Mid-term ••••1478), call mcp__robinhood__get_portfolio to read the live uninvested cash / buying-power balance and include it in that account's total. Do NOT report equity-only totals. For external brokerage accounts, include a cash row only if the sheet shows one (no API available).
+   f. Per-account totals: sum current_value for all positions in each account PLUS that account's cash balance from step e2 (Robinhood) or the sheet cash row (external). Show the cash component explicitly in the per-account line so the total is auditable.
+   g. Cross-account grand total: sum all per-account totals (equity + cash).
    h. Highlights — flag these regardless of account (label as 'FYI — Jack to review manually'):
       - Any position with unrealized P/L ≤ −15% (significant drawdown from cost basis).
       - Any position with unrealized P/L ≥ +50% (substantial gain; potential rebalance candidate).
       - Top 5 positions by current value across all accounts.
-   i. Append a 'Full Portfolio Overview' section to logs/reviews/${TODAY}.md with: (1) account-by-account summary table (account | # positions | total value), (2) cross-account grand total, (3) highlights table. This section is informational only — all proposals and execution remain scoped to the Agentic account.
-8. BRIEFING CONTEXT: read ~/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json (if it exists). Extract the macro, moverNotes, and actions fields. Identify any items directly relevant to the universe symbols or current open positions. Keep at most 2 relevant observations. If the file does not exist, skip silently.
-9. DIGEST: write a notification digest to logs/digest/${TODAY}.md (overwrite if it exists), <= 1800 characters, for a Telegram push. Conversational tone — brief note from a trading assistant to Jack. Warm but concise; a little personality is fine; no markdown tables, no robotic headers.
-   REQUIREMENTS — these exact facts must appear verbatim (do not paraphrase numbers):
-   - Opening line: total portfolio value across ALL accounts (e.g. 'Total portfolio: \$X across N accounts')
+3. Write a SELF-CONTAINED markdown section to logs/reviews/${TODAY}.overview.md (overwrite if it exists) titled with a '## Full Portfolio Overview' heading, containing: (1) account-by-account summary table (account | # positions | total value), (2) a clearly labelled cross-account grand total line, (3) highlights table. This section is informational only — all proposals and execution remain scoped to the Agentic account. Do not write to logs/reviews/${TODAY}.md. Do not commit.
+
+${CRITICAL_RO}"
+
+# ── Run A, B, C concurrently; each writes its own file, none commit. ──────────
+run_job() { # $1=prompt  $2=jsonfile  $3=errfile
+  "$CLAUDE" -p "$1" \
+    --output-format json \
+    --mcp-config "$MCP_CONFIG_FILE" \
+    --allowedTools "${READ_ALLOWED[@]}" \
+    > "$2" 2> "$3"
+}
+
+echo "----- launching parallel jobs A/B/C $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
+run_job "$PROMPT_A" "$TMP_A_JSON" "$TMP_A_ERR" & PID_A=$!
+run_job "$PROMPT_B" "$TMP_B_JSON" "$TMP_B_ERR" & PID_B=$!
+run_job "$PROMPT_C" "$TMP_C_JSON" "$TMP_C_ERR" & PID_C=$!
+wait "$PID_A"; RC_A=$?
+wait "$PID_B"; RC_B=$?
+wait "$PID_C"; RC_C=$?
+echo "----- parallel jobs done A=$RC_A B=$RC_B C=$RC_C $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
+
+# Fold each job's stderr + result JSON into the run log, and record token usage.
+for pair in "A:$TMP_A_JSON:$TMP_A_ERR" "B:$TMP_B_JSON:$TMP_B_ERR" "C:$TMP_C_JSON:$TMP_C_ERR"; do
+  lbl="${pair%%:*}"; rest="${pair#*:}"; jf="${rest%%:*}"; ef="${rest#*:}"
+  echo "----- job $lbl stderr -----" >> "$RUNLOG"; cat "$ef" >> "$RUNLOG" 2>/dev/null
+  echo "----- job $lbl result json -----" >> "$RUNLOG"; cat "$jf" >> "$RUNLOG" 2>/dev/null
+  # Log under the stable "trading-review" job name (not per-phase) so the
+  # Observatory /usage daily total still rolls up across all sub-calls.
+  _log_trader_usage "trading-review" "$(cat "$jf" 2>/dev/null)"
+done
+
+# ── Deterministic merge: fold the overview fragment into the review file. ─────
+# C owns a separate fragment file precisely so it never races A on the review
+# file; here (single-threaded) we splice it in and drop the fragment.
+if [ -f "$OVERVIEW_FILE" ]; then
+  if [ -f "$REVIEW_FILE" ]; then
+    { echo; echo; cat "$OVERVIEW_FILE"; } >> "$REVIEW_FILE"
+  else
+    cp "$OVERVIEW_FILE" "$REVIEW_FILE"
+  fi
+  rm -f "$OVERVIEW_FILE"
+fi
+
+# ── Digest + single commit. Thin step: reads the assembled local files only. ──
+PROMPT_D="You are writing the notification digest and committing the scheduled portfolio review for ${TODAY}. The heavy work is already done and written to local files. Do NOT call any Robinhood or Google tools.
+
+Steps:
+1. Read logs/reviews/${TODAY}.md (contains the Agentic BUY/TRIM proposals and a 'Full Portfolio Overview' section) and logs/reconcile/${TODAY}.md (the reconcile drift report). If either file is missing, note it but continue with what exists.
+2. BRIEFING CONTEXT: read ~/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json (if it exists). Extract the macro, moverNotes, and actions fields. Keep at most 2 observations directly relevant to the universe symbols or current open positions. If the file does not exist, skip silently.
+3. DIGEST: write a notification digest to logs/digest/${TODAY}.md (overwrite if it exists), <= 1800 characters, for a Telegram push. Conversational tone — brief note from a trading assistant to Jack. Warm but concise; a little personality is fine; no markdown tables, no robotic headers.
+   REQUIREMENTS — these exact facts must appear verbatim (do not paraphrase numbers); pull them from the files you read:
+   - Opening line: total portfolio value across ALL accounts (e.g. 'Total portfolio: \$X across N accounts') — take the cross-account grand total from the 'Full Portfolio Overview' section.
    - Every ranked BUY proposal as '\$100 <SYM> (<drawdown>%)'
    - Every TRIM proposal as 'TRIM <SYM> <shares>sh (~\$<proceeds>) — <drawdown>% below 20d high' followed by 'REDISTRIBUTE → <SYM> \$<amount>, <SYM> \$<amount>' (or 'proceeds held as cash' if no recipients)
    - Whether there are no TRIM signals (say so explicitly)
    - Reconcile outcome (exact drift-alert count or that the sheet matches)
-   - If any position flagged in step 7h (notable drawdown or gain), include a one-line summary: e.g. '⚠️ N positions flagged across all accounts — see full review'
+   - If the overview flagged any position (notable drawdown ≤ −15% or gain ≥ +50%), include a one-line summary: e.g. '⚠️ N positions flagged across all accounts — see full review'
    - Note that all are proposals only; execution happens in the interactive session with Jack's confirmation
-   Lead with a one-line human summary. If the briefing had relevant observations (step 8), add a short '📰 Briefing note:' at the end — max 2 items, plain prose. End with a short non-pushy reminder that nothing executes automatically. This file is for notification delivery and is NOT committed.
-10. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit'. Then 'git push' (ignore push failure). Do NOT git add logs/digest.
+   Lead with a one-line human summary. If the briefing had relevant observations, add a short '📰 Briefing note:' at the end — max 2 items, plain prose. End with a short non-pushy reminder that nothing executes automatically. This file is for notification delivery and is NOT committed.
+4. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit' with a concise message like 'review(${TODAY}): scheduled post-close review — N BUY signals, M reconcile alerts'. Then 'git push' (ignore push failure). Do NOT git add logs/digest.
 
-CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circumstances. Do not call place_equity_order or cancel_equity_order. Do not write to the Google Sheet."
+CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. Only stage logs/reviews and logs/reconcile — never logs/digest."
 
-# --output-format json: the agent still does its real work via the Write tool
-# (logs/reviews, logs/reconcile) + git; stdout is just the run-log record here, so
-# switching text→json is safe and lets us capture token usage. stdout (the JSON
-# result) is captured; stderr (progress) still streams to the run log.
-REVIEW_JSON="$("$CLAUDE" -p "$PROMPT" \
+echo "----- digest+commit step $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
+"$CLAUDE" -p "$PROMPT_D" \
   --output-format json \
-  --mcp-config "$MCP_CONFIG_FILE" \
-  --allowedTools \
-    "mcp__robinhood__get_accounts" \
-    "mcp__robinhood__get_portfolio" \
-    "mcp__robinhood__get_equity_positions" \
-    "mcp__robinhood__get_equity_quotes" \
-    "mcp__robinhood__get_equity_historicals" \
-    "mcp__robinhood__get_equity_orders" \
-    "mcp__robinhood__get_equity_tradability" \
-    "mcp__google-drive__read_holdings" \
-    "mcp__google-drive__read_sheet" \
-    "Read" "Write" "Edit" "Grep" "Glob" \
-    "Bash(git add:*)" "Bash(git commit:*)" "Bash(git push:*)" "Bash(git status:*)" \
-  2>>"$RUNLOG")"
+  --allowedTools "${DIGEST_ALLOWED[@]}" \
+  > "$TMP_D_JSON" 2> "$TMP_D_ERR"
+RC_D=$?
+echo "----- digest stderr -----" >> "$RUNLOG"; cat "$TMP_D_ERR" >> "$RUNLOG" 2>/dev/null
+echo "----- digest result json -----" >> "$RUNLOG"; cat "$TMP_D_JSON" >> "$RUNLOG" 2>/dev/null
+_log_trader_usage "trading-review" "$(cat "$TMP_D_JSON" 2>/dev/null)"
 
-RC=$?
-printf '%s\n' "$REVIEW_JSON" >> "$RUNLOG"
-_log_trader_usage "trading-review" "$REVIEW_JSON"
-echo "===== run-review end rc=$RC $(date '+%H:%M:%S %Z') =====" >> "$RUNLOG"
+# Overall rc: nonzero if any stage failed, so the cron wrapper surfaces a real
+# failure (and, importantly, only a real one — each stage is now short).
+RC=0
+for r in "$RC_A" "$RC_B" "$RC_C" "$RC_D"; do
+  [ "$r" -ne 0 ] && RC="$r"
+done
+echo "===== run-review end rc=$RC (A=$RC_A B=$RC_B C=$RC_C D=$RC_D) $(date '+%H:%M:%S %Z') =====" >> "$RUNLOG"
 exit $RC
