@@ -42,6 +42,10 @@ export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 # from launchd/cron; the token file is the durable workaround — see scripts/_env.sh).
 [ -f "$HERE/_env.sh" ] && . "$HERE/_env.sh"
 
+# _env.sh is sourced conditionally, so re-assert the pin here — `set -u` would
+# otherwise abort the run if that file ever goes missing.
+: "${TRADER_CLAUDE_MODEL:=claude-sonnet-4-6}"
+
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 GIT="$(command -v git || echo /usr/bin/git)"
 PYTHON="$(command -v python3 || echo /usr/bin/python3)"
@@ -76,7 +80,10 @@ except Exception:
     sys.exit(0)
 u = d.get("usage", {}) or {}
 mu = d.get("modelUsage", {}) or {}
-model = next(iter(mu), "") if isinstance(mu, dict) and mu else ""
+# Pick the model that did the work, not whichever key happens to come first:
+# claude -p also bills a tiny auxiliary model (~20 output tokens) that sorts
+# first, so next(iter(mu)) mislabelled every record.
+model = max(mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0), default="") if isinstance(mu, dict) and mu else ""
 rec = {"date": datetime.date.today().isoformat(), "job": sys.argv[1], "model": model,
        "input_tokens": u.get("input_tokens", 0) or 0, "output_tokens": u.get("output_tokens", 0) or 0,
        "cache_read_tokens": u.get("cache_read_input_tokens", 0) or 0, "cost_usd": d.get("total_cost_usd", 0) or 0,
@@ -217,6 +224,7 @@ ${CRITICAL_RO}"
 # ── Run A, B, C concurrently; each writes its own file, none commit. ──────────
 run_job() { # $1=prompt  $2=jsonfile  $3=errfile
   "$CLAUDE" -p "$1" \
+    --model "$TRADER_CLAUDE_MODEL" \
     --output-format json \
     --mcp-config "$MCP_CONFIG_FILE" \
     --allowedTools "${READ_ALLOWED[@]}" \
@@ -276,6 +284,7 @@ CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. O
 
 echo "----- digest+commit step $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 "$CLAUDE" -p "$PROMPT_D" \
+  --model "$TRADER_CLAUDE_MODEL" \
   --output-format json \
   --allowedTools "${DIGEST_ALLOWED[@]}" \
   > "$TMP_D_JSON" 2> "$TMP_D_ERR"

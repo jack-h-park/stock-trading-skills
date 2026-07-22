@@ -17,3 +17,16 @@ if [ -f "$TOKEN_FILE" ] && [ -s "$TOKEN_FILE" ]; then
   CLAUDE_CODE_OAUTH_TOKEN="$(cat "$TOKEN_FILE" | tr -d '[:space:]')"
   export CLAUDE_CODE_OAUTH_TOKEN
 fi
+
+# Model for every `claude -p` call in this repo. Pinned rather than left to the
+# CLI default: without it the model is whatever the logged-in account happens to
+# select, so the model behind the trade signals can change with no commit and no
+# alert.
+#
+# The value below is what the account default actually resolved to as of
+# 2026-07-22, so pinning it is a no-op. Verified from the modelUsage block in
+# logs/cron/*.run.log — NOT from trader-usage.jsonl, whose `model` field was
+# mislabelled until the _log_trader_usage fix in this same change.
+#
+# Override to change tiers, e.g. TRADER_CLAUDE_MODEL=claude-opus-4-8.
+export TRADER_CLAUDE_MODEL="${TRADER_CLAUDE_MODEL:-claude-sonnet-4-6}"
