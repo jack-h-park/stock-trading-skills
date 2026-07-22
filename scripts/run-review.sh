@@ -44,7 +44,8 @@ export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # _env.sh is sourced conditionally, so re-assert the pin here — `set -u` would
 # otherwise abort the run if that file ever goes missing.
-: "${TRADER_CLAUDE_MODEL:=claude-sonnet-4-6}"
+: "${TRADER_CLAUDE_MODEL:=claude-opus-4-8}"
+: "${TRADER_DIGEST_MODEL:=claude-sonnet-4-6}"
 
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 GIT="$(command -v git || echo /usr/bin/git)"
@@ -284,7 +285,7 @@ CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. O
 
 echo "----- digest+commit step $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 "$CLAUDE" -p "$PROMPT_D" \
-  --model "$TRADER_CLAUDE_MODEL" \
+  --model "$TRADER_DIGEST_MODEL" \
   --output-format json \
   --allowedTools "${DIGEST_ALLOWED[@]}" \
   > "$TMP_D_JSON" 2> "$TMP_D_ERR"

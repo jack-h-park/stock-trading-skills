@@ -23,10 +23,15 @@ fi
 # select, so the model behind the trade signals can change with no commit and no
 # alert.
 #
-# The value below is what the account default actually resolved to as of
-# 2026-07-22, so pinning it is a no-op. Verified from the modelUsage block in
-# logs/cron/*.run.log — NOT from trader-usage.jsonl, whose `model` field was
-# mislabelled until the _log_trader_usage fix in this same change.
+# Prompts A/B/C do the analytical work: live Robinhood MCP reads, dip-signal
+# computation, ranking candidate trades, and reconciling broker holdings against
+# the manual sheet. That is multi-step quantitative reasoning over money, so it
+# runs on the top tier.
 #
-# Override to change tiers, e.g. TRADER_CLAUDE_MODEL=claude-opus-4-8.
-export TRADER_CLAUDE_MODEL="${TRADER_CLAUDE_MODEL:-claude-sonnet-4-6}"
+# This was claude-sonnet-4-6 (the inherited account default) until 2026-07-22.
+export TRADER_CLAUDE_MODEL="${TRADER_CLAUDE_MODEL:-claude-opus-4-8}"
+
+# The digest/commit step (prompt D) formats files the analytical jobs already
+# wrote and calls no MCP tool, so it does not need the top tier. Kept on the
+# previous model — raising it would spend Opus on string formatting.
+export TRADER_DIGEST_MODEL="${TRADER_DIGEST_MODEL:-claude-sonnet-4-6}"
