@@ -58,6 +58,7 @@ in logs. Strategy, guardrails, skills, and the cron are reused as-is.
 | `strategy/policy.md` | What to trade: universe, entry/exit, deterministic prioritization |
 | `config/guardrails.md` | How much / whether to confirm: hard limits + confirm policy |
 | `config/holdings-sheet.md` | Sheet fileId, sheet-section → RH account map, drift thresholds |
+| `config/observatory-context.md` | Whole-portfolio reference from the Observatory's published summary, and the limits on using it |
 | `skills/trade/SKILL.md` | Order flow: review → confirm → place → log |
 | `skills/portfolio-review/SKILL.md` | Periodic signal scan → dated report (read-only) |
 | `skills/reconcile/SKILL.md` | Robinhood vs Sheet drift check (read-only) |

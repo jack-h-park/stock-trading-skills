@@ -33,6 +33,7 @@ not as new repos.
 | `skills/reconcile/SKILL.md` | Drift check: Robinhood live vs manual Google Sheet | No |
 | `skills/log/SKILL.md` | Append-only md log format contract | No |
 | `config/holdings-sheet.md` | Sheet fileId, account mapping, drift thresholds | Robinhood map |
+| `config/observatory-context.md` | Whole-portfolio reference context, and the limits on using it | No |
 | `providers/_contract.md` | Abstract interface every provider must satisfy | No |
 | `providers/<broker>/adapter.md` | Maps broker tools ↔ the contract | **Yes** |
 | `providers/<broker>/capabilities.md` | What the broker can/can't do | **Yes** |

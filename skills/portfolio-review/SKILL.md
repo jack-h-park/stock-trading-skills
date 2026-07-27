@@ -34,7 +34,12 @@ non-Agentic accounts are informational — Jack acts on them outside this agent.
    - `quote()` / `historicals()` for universe symbols of interest
    - `orders()` — any open/unfilled orders
 3. Assess against policy: position sizing vs. limits, universe drift, kill-switch condition,
-   stale open orders. Compute BUY signals and TRIM+REDISTRIBUTE signals per policy.
+   stale open orders.
+3b. Optionally read the Observatory summary per `config/observatory-context.md` — whole-portfolio
+   reference for names this sleeve is about to touch. Reference only: it belongs in **Flags**
+   as a note to the user and never changes a ranked list, vetoes a signal, or interacts with
+   a guardrail. Its percentages have a different denominator from the guardrails' position
+   cap. Missing is a normal state; note it in Flags and continue. Compute BUY signals and TRIM+REDISTRIBUTE signals per policy.
 4. **Write the Agentic review** to `logs/reviews/YYYY-MM-DD.md`:
    - Portfolio snapshot (value, cash, day change)
    - Positions table with P/L and % of portfolio
