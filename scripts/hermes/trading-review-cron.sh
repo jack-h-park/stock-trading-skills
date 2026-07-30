@@ -39,7 +39,47 @@ bash "$RUNNER"
 RC=$?
 
 DIGEST="$REPO/logs/digest/${DATE_ISO}.md"
+AGENTIC="$REPO/logs/digest/${DATE_ISO}.agentic.md"
 STATUS="$REPO/logs/cron/${DATE_ISO}.status"
+
+# The Agentic proposals are the only part Jack can act on, so they go to Discord —
+# interaction-required — while the read-only cross-account context stays on
+# Telegram via this script's stdout. Hermes delivers stdout to one channel only,
+# so the second destination is sent from here.
+#
+# Falls back to stdout when the profile has no Discord credentials: two clearly
+# separated Telegram messages beat losing the proposals entirely, and the split
+# starts working the moment the .env gains the keys — no redeploy.
+
+# Hermes cron --script subprocesses do not inherit the profile .env, and the
+# repo's _env.sh carries only the model pins and the Claude token. Pull the two
+# Discord keys out by name rather than sourcing the whole file, which would also
+# re-set TRADING_AGENT_REPO and PATH from a file this script has already resolved.
+PROFILE_ENV="${TRADER_PROFILE_ENV:-$HOME/.hermes/profiles/trader/.env}"
+if [ -r "$PROFILE_ENV" ]; then
+  for _k in DISCORD_BOT_TOKEN DISCORD_HOME_CHANNEL; do
+    _v="$(grep -E "^${_k}=" "$PROFILE_ENV" | tail -1 | cut -d= -f2-)"
+    [ -n "$_v" ] && export "$_k=$_v"
+  done
+  unset _k _v
+fi
+
+deliver_agentic() {
+  [ -f "$AGENTIC" ] || return 0
+  local sender="$HOME/workspace/ai-assets/jackhpark-hermes-control-plane/gateway/scripts/send_discord.py"
+  if [ -n "${DISCORD_BOT_TOKEN:-}" ] && [ -n "${DISCORD_HOME_CHANNEL:-}" ] && [ -f "$sender" ]; then
+    if python3 "$sender" --bot-token "$DISCORD_BOT_TOKEN" --channel-id "$DISCORD_HOME_CHANNEL" \
+         < "$AGENTIC" >/dev/null 2>&1; then
+      return 0
+    fi
+    # A failed send must not swallow the proposals — fall through to stdout.
+    echo "⚠️ Agentic proposals could not be sent to Discord; delivering here instead."
+  fi
+  cat "$AGENTIC"
+  echo
+  echo "———"
+  echo
+}
 
 # Name the phases that actually failed, from the runner's status file. Reading the
 # tail of the run log instead lands on the LAST job's result JSON — normally the
@@ -64,18 +104,21 @@ if [ "$RC" -ne 0 ]; then
   # A partial failure still leaves real work on disk. Suppressing the digest
   # because one phase died threw away the proposals the surviving phases had
   # already produced and paid for, so lead with the warning and deliver anyway.
-  if [ -f "$DIGEST" ]; then
+  if [ -f "$DIGEST" ] || [ -f "$AGENTIC" ]; then
     echo "⚠️ trading-review PARTIAL $DATE_ISO — ${FAILED}"
-    echo "Digest below is built from the phases that did finish; anything owned by a failed phase is missing."
+    echo "What follows is built from the phases that did finish; anything owned by a failed phase is missing."
     echo
-    cat "$DIGEST"
+    deliver_agentic
+    [ -f "$DIGEST" ] && cat "$DIGEST"
   else
     echo "⚠️ trading-review FAILED $DATE_ISO (rc=$RC) — ${FAILED}"
   fi
   exit 0
 fi
 
-# Deliver the digest (if the run produced one) — this is the only stdout on success.
+# Actionable proposals to Discord; the read-only cross-account digest is this
+# script's stdout, which Hermes delivers to Telegram.
+deliver_agentic
 [ -f "$DIGEST" ] && cat "$DIGEST"
 
 exit 0

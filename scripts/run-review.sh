@@ -313,19 +313,28 @@ Steps:
 1. Read logs/reviews/${TODAY}.md (contains the Agentic BUY/TRIM proposals and a 'Full Portfolio Overview' section) and logs/reconcile/${TODAY}.md (the reconcile drift report). If either file is missing, note it but continue with what exists.
 2. BRIEFING CONTEXT: read ~/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json (if it exists). Extract the macro, moverNotes, and actions fields. Keep at most 2 observations directly relevant to the universe symbols or current open positions. If the file does not exist, skip silently.
 2b. ACT-NOW OVERRIDE: each action carries a \"priority\" of act-now, this-week, or fyi. An action whose priority is \"act-now\" is ALWAYS carried into the digest, in addition to the 2 relevance-picked observations and regardless of whether its symbol is in the Agentic universe — the briefing allows at most one per day and zero is the normal case, so it is the one item the writer marked as decidable today. Lead the briefing note with it, keep its deadline, and say plainly if it concerns a holding outside the Agentic account so Jack knows it is not actionable by this sleeve. Never restate an act-now as a proposal or a guardrail input: it is context for Jack, and it must not change the ranked BUY list.
-3. DIGEST: write a notification digest to logs/digest/${TODAY}.md (overwrite if it exists), <= 1800 characters, for a Telegram push. Conversational tone — brief note from a trading assistant to Jack. Warm but concise; a little personality is fine; no markdown tables, no robotic headers.
-   REQUIREMENTS — these exact facts must appear verbatim (do not paraphrase numbers); pull them from the files you read:
-   - Opening line: total portfolio value across ALL accounts (e.g. 'Total portfolio: \$X across N accounts') — take the cross-account grand total from the 'Full Portfolio Overview' section.
-   - Every ranked BUY proposal as '\$100 <SYM> (<drawdown>%)'
-   - Every TRIM proposal as 'TRIM <SYM> <shares>sh (~\$<proceeds>) — <drawdown>% below 20d high' followed by 'REDISTRIBUTE → <SYM> \$<amount>, <SYM> \$<amount>' (or 'proceeds held as cash' if no recipients)
-   - Whether there are no TRIM signals (say so explicitly)
-   - Reconcile outcome (exact drift-alert count or that the sheet matches)
-   - If the overview flagged any position (notable drawdown ≤ −15% or gain ≥ +50%), include a one-line summary: e.g. '⚠️ N positions flagged across all accounts — see full review'
-   - Note that all are proposals only; execution happens in the interactive session with Jack's confirmation
-   Lead with a one-line human summary. If the briefing had relevant observations, add a short '📰 Briefing note:' at the end — max 2 relevance-picked items plus the act-now item from step 2b if there was one (so at most 3), plain prose, act-now first. End with a short non-pushy reminder that nothing executes automatically. This file is for notification delivery and is NOT committed.
+3. TWO DIGESTS, split by what Jack can act on. They go to different channels, so nothing may appear in both — a fact belongs to exactly one file. Conversational tone in each; warm but concise, no markdown tables, no robotic headers. Neither file is committed.
+
+3a. ACTIONABLE — write logs/digest/${TODAY}.agentic.md (overwrite if it exists), <= 1600 characters. ONLY the Robinhood Agentic account (<AGENTIC_ACCOUNT>), the one account whose proposals Jack can execute. Nothing from any other account belongs here.
+   - Opening line: the Agentic sleeve's own total value and its day change, plus the remaining order slots as 'slots: N left today, M left this week' (caps are in config/guardrails.md; count this week's fills Mon-Sun).
+   - Every ranked BUY proposal as '\$100 <SYM> (<drawdown>%)', and name any symbol that signalled but was blocked, with the rule that blocked it.
+   - Every TRIM proposal as 'TRIM <SYM> <shares>sh (~\$<proceeds>) — <drawdown>% below 20d high' followed by 'REDISTRIBUTE → <SYM> \$<amount>, <SYM> \$<amount>' (or 'proceeds held as cash' if no recipients). If there are no TRIM signals, say so explicitly.
+   - Any take-profit or stop-loss exit, with the share count and estimated proceeds.
+   - End with the reminder that these are proposals only and nothing executes until Jack confirms in the interactive session.
+
+3b. REFERENCE — write logs/digest/${TODAY}.md (overwrite if it exists), <= 1600 characters. Everything Jack CANNOT execute from the Agentic account. Open by saying plainly that this message is read-only context.
+   - Opening line: 'US accounts: \$X across N accounts' — the cross-account grand total from the 'Full Portfolio Overview' section. Call it US accounts, never 'total portfolio': that figure covers the US brokerages only and excludes the Korean holdings entirely, so calling it a portfolio total overstates nothing but understates everything else.
+   - Reconcile outcome (exact drift-alert count or that the sheet matches), naming the accounts involved. Say that fixing it means editing the holdings sheet, not placing an order.
+   - If the overview flagged any position (notable drawdown ≤ −15% or gain ≥ +50%), one line: '⚠️ N positions flagged across all accounts — see full review'.
+   - If the briefing had relevant observations, a short '📰 Briefing note:' — at most 2 relevance-picked items plus the act-now item from step 2b if there was one (so at most 3), plain prose, act-now first.
+   - Whenever an item concerns a holding outside the Agentic account, say so, so it is never mistaken for something this sleeve can act on.
 4. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit' with a concise message like 'review(${TODAY}): scheduled post-close review — N BUY signals, M reconcile alerts'. Then 'git push' (ignore push failure). Do NOT git add logs/digest.
 
 CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. Only stage logs/reviews and logs/reconcile — never logs/digest."
+
+# Both digests are per-day artefacts the wrapper delivers and nothing else reads;
+# a stale one from an earlier run would otherwise be re-sent as today's.
+rm -f "$REPO/logs/digest/${TODAY}.agentic.md"
 
 echo "----- digest+commit step $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 _run_with_retry "$PROMPT_D" "$TMP_D_JSON" "$TMP_D_ERR" D digest
