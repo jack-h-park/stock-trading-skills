@@ -64,6 +64,25 @@ if [ -r "$PROFILE_ENV" ]; then
   unset _k _v
 fi
 
+# This review only ever sees the five US brokerage accounts, so its digest speaks
+# for about $365k while the Korean book — larger — goes unmentioned. The briefing
+# already computes that position each morning; borrow its line rather than
+# inventing a second calculation, and print it above the digest so the US figure
+# below is read as one market rather than the whole portfolio.
+#
+# Deliberately not routed through the digest prompt: the number stays computed
+# rather than transcribed by a model. Silent when the briefing has no Korean
+# market for the day, or is not installed on this host.
+emit_kr_line() {
+  local repo="${BRIEFING_REPO:-$HOME/workspace/briefing/stock-portfolio-briefing}"
+  local tool="$repo/tools/kr-line.mjs"
+  [ -f "$tool" ] || return 0
+  local line
+  line="$(node "$tool" --date "$DATE_ISO" 2>/dev/null)" || return 0
+  [ -n "$line" ] || return 0
+  printf '%s\n\n' "$line"
+}
+
 deliver_agentic() {
   [ -f "$AGENTIC" ] || return 0
   local sender="$HOME/workspace/ai-assets/jackhpark-hermes-control-plane/gateway/scripts/send_discord.py"
@@ -109,6 +128,7 @@ if [ "$RC" -ne 0 ]; then
     echo "What follows is built from the phases that did finish; anything owned by a failed phase is missing."
     echo
     deliver_agentic
+    emit_kr_line
     [ -f "$DIGEST" ] && cat "$DIGEST"
   else
     echo "⚠️ trading-review FAILED $DATE_ISO (rc=$RC) — ${FAILED}"
@@ -119,6 +139,7 @@ fi
 # Actionable proposals to Discord; the read-only cross-account digest is this
 # script's stdout, which Hermes delivers to Telegram.
 deliver_agentic
+emit_kr_line
 [ -f "$DIGEST" ] && cat "$DIGEST"
 
 exit 0
