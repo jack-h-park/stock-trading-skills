@@ -38,15 +38,44 @@ fi
 bash "$RUNNER"
 RC=$?
 
+DIGEST="$REPO/logs/digest/${DATE_ISO}.md"
+STATUS="$REPO/logs/cron/${DATE_ISO}.status"
+
+# Name the phases that actually failed, from the runner's status file. Reading the
+# tail of the run log instead lands on the LAST job's result JSON — normally the
+# digest step, which usually succeeds — so the alert used to announce a failure
+# while quoting a success payload.
 if [ "$RC" -ne 0 ]; then
-  # Extract the most informative error line from the run log.
-  ERR="$(grep -v '^=====' "$RUNLOG" 2>/dev/null | tail -3 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-  echo "⚠️ trading-review FAILED $DATE_ISO (rc=$RC) — ${ERR:-see logs/cron/${DATE_ISO}.run.log}"
+  NAMES="A=signals B=reconcile C=overview D=digest"
+  FAILED=""
+  while read -r lbl prc reason; do
+    [ -z "${lbl:-}" ] && continue
+    [ "${prc:-0}" -eq 0 ] 2>/dev/null && continue
+    for pair in $NAMES; do
+      [ "${pair%%=*}" = "$lbl" ] && lbl="${pair#*=}" && break
+    done
+    FAILED="${FAILED:+$FAILED; }${lbl} — ${reason}"
+  done < "$STATUS" 2>/dev/null
+
+  if [ -z "$FAILED" ]; then
+    FAILED="see logs/cron/${DATE_ISO}.run.log"
+  fi
+
+  # A partial failure still leaves real work on disk. Suppressing the digest
+  # because one phase died threw away the proposals the surviving phases had
+  # already produced and paid for, so lead with the warning and deliver anyway.
+  if [ -f "$DIGEST" ]; then
+    echo "⚠️ trading-review PARTIAL $DATE_ISO — ${FAILED}"
+    echo "Digest below is built from the phases that did finish; anything owned by a failed phase is missing."
+    echo
+    cat "$DIGEST"
+  else
+    echo "⚠️ trading-review FAILED $DATE_ISO (rc=$RC) — ${FAILED}"
+  fi
   exit 0
 fi
 
 # Deliver the digest (if the run produced one) — this is the only stdout on success.
-DIGEST="$REPO/logs/digest/${DATE_ISO}.md"
 [ -f "$DIGEST" ] && cat "$DIGEST"
 
 exit 0

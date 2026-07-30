@@ -47,6 +47,13 @@ export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 : "${TRADER_CLAUDE_MODEL:=claude-opus-4-8}"
 : "${TRADER_DIGEST_MODEL:=claude-sonnet-4-6}"
 
+# A `claude -p` call that comes back 529 Overloaded has done no work and billed no
+# tokens — it is a capacity answer, not a verdict on the request. One such answer
+# used to end the phase for the day, so retry before giving up. Delays are indexed
+# by attempt; running out of delays ends the loop even if MAX_ATTEMPTS is raised.
+: "${CLAUDE_MAX_ATTEMPTS:=3}"
+CLAUDE_RETRY_DELAYS=(20 60 150)
+
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 GIT="$(command -v git || echo /usr/bin/git)"
 PYTHON="$(command -v python3 || echo /usr/bin/python3)"
@@ -224,19 +231,54 @@ Steps:
 ${CRITICAL_RO}"
 
 # ── Run A, B, C concurrently; each writes its own file, none commit. ──────────
-run_job() { # $1=prompt  $2=jsonfile  $3=errfile
-  "$CLAUDE" -p "$1" \
-    --model "$TRADER_CLAUDE_MODEL" \
-    --output-format json \
-    --mcp-config "$MCP_CONFIG_FILE" \
-    --allowedTools "${READ_ALLOWED[@]}" \
-    > "$2" 2> "$3"
+
+# Retry only what a second call could plausibly answer differently: an upstream
+# capacity/transient status, or a CLI that died without producing any JSON. A run
+# that answered cleanly is never retried — its file is already written and a
+# second pass would append a duplicate section.
+_is_retryable() { # $1=rc  $2=jsonfile
+  [ ! -s "$2" ] && return 0
+  grep -q '"api_error_status":\(429\|500\|502\|503\|529\)' "$2" && return 0
+  return 1
+}
+
+_run_with_retry() { # $1=prompt $2=jsonfile $3=errfile $4=label $5=digest|read
+  local attempt=1 rc delay
+  while : ; do
+    if [ "$5" = "digest" ]; then
+      "$CLAUDE" -p "$1" \
+        --model "$TRADER_DIGEST_MODEL" \
+        --output-format json \
+        --allowedTools "${DIGEST_ALLOWED[@]}" \
+        > "$2" 2> "$3"
+    else
+      "$CLAUDE" -p "$1" \
+        --model "$TRADER_CLAUDE_MODEL" \
+        --output-format json \
+        --mcp-config "$MCP_CONFIG_FILE" \
+        --allowedTools "${READ_ALLOWED[@]}" \
+        > "$2" 2> "$3"
+    fi
+    rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    _is_retryable "$rc" "$2" || return "$rc"
+    delay="${CLAUDE_RETRY_DELAYS[$((attempt - 1))]:-}"
+    [ "$attempt" -ge "$CLAUDE_MAX_ATTEMPTS" ] && return "$rc"
+    [ -z "$delay" ] && return "$rc"
+    echo "----- job $4 attempt $attempt failed (rc=$rc), retrying in ${delay}s -----" >> "$RUNLOG"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+}
+
+run_job() { # $1=prompt  $2=jsonfile  $3=errfile  $4=label
+  _run_with_retry "$1" "$2" "$3" "$4" read
 }
 
 echo "----- launching parallel jobs A/B/C $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
-run_job "$PROMPT_A" "$TMP_A_JSON" "$TMP_A_ERR" & PID_A=$!
-run_job "$PROMPT_B" "$TMP_B_JSON" "$TMP_B_ERR" & PID_B=$!
-run_job "$PROMPT_C" "$TMP_C_JSON" "$TMP_C_ERR" & PID_C=$!
+run_job "$PROMPT_A" "$TMP_A_JSON" "$TMP_A_ERR" A & PID_A=$!
+run_job "$PROMPT_B" "$TMP_B_JSON" "$TMP_B_ERR" B & PID_B=$!
+run_job "$PROMPT_C" "$TMP_C_JSON" "$TMP_C_ERR" C & PID_C=$!
 wait "$PID_A"; RC_A=$?
 wait "$PID_B"; RC_B=$?
 wait "$PID_C"; RC_C=$?
@@ -285,11 +327,7 @@ Steps:
 CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. Only stage logs/reviews and logs/reconcile — never logs/digest."
 
 echo "----- digest+commit step $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
-"$CLAUDE" -p "$PROMPT_D" \
-  --model "$TRADER_DIGEST_MODEL" \
-  --output-format json \
-  --allowedTools "${DIGEST_ALLOWED[@]}" \
-  > "$TMP_D_JSON" 2> "$TMP_D_ERR"
+_run_with_retry "$PROMPT_D" "$TMP_D_JSON" "$TMP_D_ERR" D digest
 RC_D=$?
 echo "----- digest stderr -----" >> "$RUNLOG"; cat "$TMP_D_ERR" >> "$RUNLOG" 2>/dev/null
 echo "----- digest result json -----" >> "$RUNLOG"; cat "$TMP_D_JSON" >> "$RUNLOG" 2>/dev/null
@@ -301,5 +339,34 @@ RC=0
 for r in "$RC_A" "$RC_B" "$RC_C" "$RC_D"; do
   [ "$r" -ne 0 ] && RC="$r"
 done
+
+# Machine-readable per-phase outcome for the cron wrapper. The wrapper used to
+# quote `tail -3` of this log to explain a failure, which lands on the LAST job's
+# JSON — job D, the one that usually succeeded — so a failure alert displayed a
+# success payload. One line per phase, "<label> <rc> <what went wrong>", keeps the
+# alert honest without making the wrapper parse a 300KB log.
+STATUS_FILE="$REPO/logs/cron/${TODAY}.status"
+: > "$STATUS_FILE"
+for pair in "A:$RC_A:$TMP_A_JSON" "B:$RC_B:$TMP_B_JSON" "C:$RC_C:$TMP_C_JSON" "D:$RC_D:$TMP_D_JSON"; do
+  lbl="${pair%%:*}"; rest="${pair#*:}"; prc="${rest%%:*}"; pjson="${rest#*:}"
+  if [ "$prc" -eq 0 ]; then
+    echo "$lbl 0 ok" >> "$STATUS_FILE"
+  else
+    reason="$("$PYTHON" - "$pjson" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("no result JSON (the CLI produced no output)")
+else:
+    status = d.get("api_error_status")
+    text = (d.get("result") or "").strip().split(". ")[0]
+    print(f"HTTP {status}: {text}" if status else (text or "failed without a message"))
+PYEOF
+)"
+    echo "$lbl $prc ${reason:-failed without a message}" >> "$STATUS_FILE"
+  fi
+done
+
 echo "===== run-review end rc=$RC (A=$RC_A B=$RC_B C=$RC_C D=$RC_D) $(date '+%H:%M:%S %Z') =====" >> "$RUNLOG"
 exit $RC
