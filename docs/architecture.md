@@ -89,7 +89,7 @@ Mid-term `<MIDTERM_ACCOUNT>`) and external brokerages are **reference/reconcile 
 - **Exit:** +12% take-profit; −8% stop on single names (ETFs no stop). Sells always confirm.
 - **Prioritization (deterministic):** when signals exceed the daily order cap, rank by
   drawdown depth, tie-break alphabetically. No qualitative reordering.
-- **Guardrails:** $100/order, 3 orders/day, $1,000/day, 20% max position, −5% intraday
+- **Guardrails:** $100/order, 5 orders/day, $1,000/day, 20% max position, −5% intraday
   kill switch, regular hours only.
 
 ## Control flow

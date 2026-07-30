@@ -30,14 +30,18 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
 | Limit | Value |
 |---|---|
 | Max notional per order | **$100** |
-| Max orders per day | **3** |
+| Max orders per day | **5** |
 | Max total notional per day | **$1,000** |
 | Max position size (% of portfolio) | **20%** |
 | Allowed order types | notional market (auto); limit allowed only with confirm |
 | Allowed trading hours | regular US session only (notional/fractional require it) |
 
-> Note: per-order cap $100 × 3 orders = $300 max actual daily spend; the $1,000 daily total
+> Note: per-order cap $100 × 5 orders = $500 max actual daily spend; the $1,000 daily total
 > is a hard ceiling that also covers any larger confirm-required orders.
+>
+> This count is also the ceiling on how many orders the standing authorization above can
+> place without per-order confirmation, so raising it raises unconfirmed daily exposure by
+> $100 per added slot.
 
 ## Kill switch
 
