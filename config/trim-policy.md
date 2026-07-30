@@ -56,8 +56,8 @@ session (or next regular session if after hours).
 
 - TRIM orders are **always confirm-before-place** — same as all other sells (per `config/guardrails.md`)
 - TRIM orders are **exempt from the $100/order cap** — a 50% trim of a position will exceed $100; the cap applies to buys only
-- TRIM orders are **not counted against the 5 orders/day buy limit** — they are a separate exit operation
-- REDISTRIBUTE buys **are** subject to normal guardrails ($100/order cap, daily order count, position cap)
+- TRIM orders are **not counted against the buy limits** (5/day, 6/week) — they are a separate exit operation
+- REDISTRIBUTE buys **are** subject to normal guardrails ($100/order cap, **daily and weekly** order counts, position cap) — they are ordinary buys and consume the same slots as a ranked BUY
 - If REDISTRIBUTE allocation per symbol > $100, place as a confirm-required order (not auto)
 
 ## Suspend conditions

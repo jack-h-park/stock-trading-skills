@@ -31,17 +31,26 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
 |---|---|
 | Max notional per order | **$100** |
 | Max orders per day | **5** |
+| Max orders per week | **6** (Mon–Sun) |
 | Max total notional per day | **$1,000** |
 | Max position size (% of portfolio) | **20%** |
 | Allowed order types | notional market (auto); limit allowed only with confirm |
 | Allowed trading hours | regular US session only (notional/fractional require it) |
 
-> Note: per-order cap $100 × 5 orders = $500 max actual daily spend; the $1,000 daily total
-> is a hard ceiling that also covers any larger confirm-required orders.
+> Note: per-order cap $100 × 5 orders = $500 max actual daily spend, and $600 in a week;
+> the $1,000 daily total is a hard ceiling that also covers any larger confirm-required
+> orders.
 >
-> This count is also the ceiling on how many orders the standing authorization above can
-> place without per-order confirmation, so raising it raises unconfirmed daily exposure by
+> These counts are also the ceiling on how many orders the standing authorization above can
+> place without per-order confirmation, so raising either raises unconfirmed exposure by
 > $100 per added slot.
+>
+> **Why a weekly count at all.** `strategy/policy.md` allows 1 add per symbol per week over
+> an 8-symbol universe, so the week was already bounded at 8 — but only implicitly, and every
+> week of real trading so far put its entire allowance on a single day (3 on 06-23, 2 on
+> 07-07, 2 on 07-23). At 5/day one heavy morning can take most of the week's room and leave
+> nothing for a deeper drop on Thursday. 6 sits above every week observed so far, so it
+> bounds the runaway case without touching normal operation.
 
 ## Kill switch
 

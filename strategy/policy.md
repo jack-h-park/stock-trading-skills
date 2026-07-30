@@ -47,10 +47,13 @@ Only trade these symbols. Anything else requires explicit user instruction.
   universe symbol trades **≥ 5% below its trailing 20-day high** (use `historicals` to
   compute the 20-day high). Notional orders must be `type=market` — see the order-mechanics
   note below.
-- **Pace:** at most **1 add per symbol per calendar week**.
-- **Averaging down:** at most **2 total $100 adds per symbol** before an exit — this also
-  keeps each position within the 20% (≈$200) cap in `config/guardrails.md`.
-- Respect all daily limits and the confirmation policy in `config/guardrails.md`.
+- **Pace:** at most **1 add per symbol per calendar week**, where a week runs **Monday
+  through Sunday** in US market time.
+- **Averaging down:** at most **2 total $100 adds per symbol** before an exit. This is a
+  pacing rule in its own right — it is no longer what keeps a position under the 20% cap in
+  `config/guardrails.md`, since 2 × $100 stopped reaching that cap once the account grew.
+- Respect the daily **and weekly** order counts and the confirmation policy in
+  `config/guardrails.md`.
 
 ## Exit rules
 
@@ -62,15 +65,16 @@ Only trade these symbols. Anything else requires explicit user instruction.
   lookback, trim size, redistribute logic, suspend conditions) are in `config/trim-policy.md`.
 - All exits (sells) are **always confirm-before-place** — never auto (see guardrails).
 
-## Prioritization (deterministic — when signals exceed the daily order cap)
+## Prioritization (deterministic — when signals exceed the order cap)
 
-When more symbols signal than the daily order cap allows (`config/guardrails.md`), select
+When more symbols signal than the order caps allow (`config/guardrails.md`), select
 which to act on by these rules **in order, with no discretionary judgment**. The same inputs
 must always produce the same ranked list:
 
 1. **Rank by drawdown depth, deepest first** (most below the 20-day high → highest priority).
 2. **Tie-break (equal drawdown to 2 decimal places): alphabetical by symbol.**
-3. Take the top N where N = remaining order slots for the day.
+3. Take the top N where **N = min(remaining slots today, remaining slots this week)**. Both
+   counts include REDISTRIBUTE buys, which are ordinary buys against the caps.
 4. Symbols already at the position cap, already added this week, or otherwise blocked by a
    guardrail are removed *before* ranking (they were never eligible).
 
