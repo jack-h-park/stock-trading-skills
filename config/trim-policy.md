@@ -10,10 +10,21 @@ up the new values automatically. No code changes required.
 |-----------|-------|-------|
 | Drawdown threshold | **10%** below recent high | If current price ≤ (recent high × 0.90), flag TRIM |
 | Recent-high lookback | **20 trading days** | Same window as BUY signal; use `historicals interval=day` |
-| Trim size | **50%** of current shares held | Round down to whole shares |
+| Trim size | **50%** of current shares held | Fractional allowed — round down to **6 decimal places** |
 | Minimum position value | **$150** | Skip TRIM if current market value < this (not worth the friction) |
 | Applies to accounts | **Agentic only** (`<AGENTIC_ACCOUNT>`) | Same scope as all other automated signals |
 | Applies to asset classes | Single names + ETFs (VOO, QQQM) | ETFs included — high drawdown here is unusual enough to warrant trimming |
+
+> **Why fractional, not whole shares.** Entries are $100 notional and every universe symbol
+> trades above $100/share, so positions are fractional by construction. A whole-share trim
+> needs 2 shares held, which the 20% position cap forbids for 7 of the 8 universe symbols —
+> at a $401 cap only NVDA (~$190/sh) can reach 2 shares at all. Rounding to whole shares
+> therefore yielded 0 executable shares on essentially every real position, which is why the
+> 2026-07-28 and 07-29 reviews both proposed a fractional sell and asked for a ruling.
+>
+> Robinhood accepts fractional quantities on all eight symbols (see
+> `providers/robinhood/capabilities.md`), but only as `market` orders in the regular session.
+> The post-close review therefore always produces a trim that executes on the next session.
 
 ### Relationship to existing exit rules (policy.md)
 
