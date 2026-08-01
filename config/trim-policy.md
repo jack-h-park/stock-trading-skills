@@ -32,11 +32,21 @@ The TRIM signal is **momentum-based** (price vs recent high), distinct from the
 existing exits which are **cost-basis-based** (price vs average cost):
 
 - Stop-loss (single names, -8% from avg cost): close the whole position → still applies, unchanged
-- Take-profit (+12% from avg cost): trim/close → still applies, unchanged
+- Take-profit (+12% from avg cost): **trim, using the `Trim size` and `Minimum position value`
+  rows of the table above** — 50% of shares held, skipped below $150
 - TRIM (this policy, -10% from recent high): trim 50% → new, may trigger before or after the above
 
 When multiple exit signals fire on the same symbol in the same review, apply the
-**most aggressive** one (i.e. stop-loss or take-profit override the 50% trim).
+**most aggressive** one — stop-loss closes the position and so overrides everything. A
+take-profit and a TRIM are now the same 50%, so they never stack: sell that 50% once.
+
+> **Why take-profit borrows this table's floor.** Its trigger is measured against **average
+> cost**, and selling never changes average cost — so a position at +15% is still at +15%
+> after a half-sale, and the signal fires again the next session, and the one after that.
+> AMZN at \$230.81 would have gone \$115 → \$58 → \$29 → \$14, halving on an unchanged price.
+> The \$150 floor is what ends it: one trim, then the remainder is too small to qualify.
+> TRIM does not need this because its trigger is a **moving** 20-day high that resolves itself.
+> Stop-loss does not need it because it closes the whole position, leaving nothing to re-fire.
 
 ## REDISTRIBUTE signal
 

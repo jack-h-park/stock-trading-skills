@@ -57,7 +57,11 @@ Only trade these symbols. Anything else requires explicit user instruction.
 
 ## Exit rules
 
-- **Take-profit:** trim/close a position when it reaches **+12%** from average cost.
+- **Take-profit:** **trim** a position when it reaches **+12%** from average cost. Size and the
+  minimum position value are the same two parameters TRIM uses — see `config/trim-policy.md`,
+  which owns both numbers. Not a close: half is taken, half is left to run. The floor is not
+  optional here, since this trigger is measured against average cost and selling does not move
+  average cost — without it the same position is halved every session at an unchanged price.
 - **Stop-loss (single names only):** close when a single stock falls **−8%** from average
   cost. **ETFs (VOO, QQQM) have no hard stop** — hold through drawdowns.
 - **Trim & redistribute:** if a position falls **≥ 10%** below its 20-day high, trim it by
