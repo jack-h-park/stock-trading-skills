@@ -143,3 +143,33 @@ Live orders never run from the cron. In an interactive session during regular ho
 
 Per `config/guardrails.md`, every live order is confirm-before-place unless you have
 explicitly enabled standing authorization (off by default).
+
+## Discord is send-only, and the proposals say otherwise
+
+Every Agentic proposal ends with *"nothing executes until you confirm in the
+interactive session"*. On Discord there is no such session. The trader gateway
+has run with **one platform** since it started:
+
+```
+2026-06-13 21:47:12  gateway.run: Gateway running with 1 platform(s)
+```
+
+That platform is Telegram. `DISCORD_BOT_TOKEN` exists in the trader profile's
+`.env`, but only the cron uses it, through `send_discord.py` — a one-way post.
+Nothing on the trader profile reads Discord back.
+
+So a reply typed under the proposals reaches nobody. On 2026-08-11 Jack answered
+"Please go ahead with all your proposals" at 19:32 and the next day's review
+proposed the same AMZN take-profit again, because the first one was never seen.
+
+Two things have to change together for that to work:
+
+1. Enable the Discord platform on the trader gateway and restart it. The restart
+   is not incidental — the gateway has been up since 2026-06-13 and a restart
+   drops any in-flight Telegram session.
+2. `require_mention: true` in the profile's discord config. Left as-is, a plain
+   reply is ignored even once the platform is listening; the bot has to be
+   mentioned, or that flag has to change for this channel.
+
+Until both are done, confirmations belong in Telegram or a terminal session, and
+the closing line of the Agentic message is a promise the channel cannot keep.

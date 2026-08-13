@@ -92,3 +92,28 @@ test in the GUI context returned `rc=0` with review + reconcile written and push
 `run-review.sh` resolves its own repo path and finds `claude`/`git` via PATH (no hardcoded
 username) so it runs on any Mac. It does `git pull --rebase --autostash` at start so a run on
 one machine fast-forwards cleanly even if another machine or a manual commit pushed since.
+
+## 13. Route by whether a reply is needed, not by which account a line concerns
+The review produces two messages a day and they had drifted into saying the same things.
+The afternoon Telegram digest opened with the Korean line the morning briefing had already
+sent verbatim, and carried a `📰 Briefing note` repeating that morning's act-now item at
+greater length — on 2026-08-11, the TQQQ/CPI decision, twice on one channel. Meanwhile the
+reconcile alert, the one line in the review that asks Jack to change something, sat in the
+message headed "read-only context".
+
+The rule the fleet already uses is: **Telegram is awareness, Discord is where a response is
+needed.** Applied here that means the channel is chosen by whether Jack has to act, not by
+which account the line is about — so a holdings-sheet drift belongs with the Agentic
+proposals even though it concerns other accounts, and a briefing item he has already read
+belongs nowhere.
+
+- Reconcile **drift** → Agentic/Discord message, with what to change in the sheet.
+- Reconcile **match** → one line in the reference message; "no drift" is the expected state.
+- Briefing note → removed. The morning briefing sends its own act-now on the same channel.
+- Korean line → removed from the digest. What this message uniquely carries is the
+  cross-account US total, which the briefing does not: that one is equity-only, priced at a
+  different close, and silent on cash and crypto.
+
+Not addressed here: the Discord side is still send-only. The gateway has run with one
+platform since 2026-06-13, so "confirm in the interactive session" has nowhere to land on
+Discord — see the note in operations.md.
