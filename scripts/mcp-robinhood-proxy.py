@@ -13,43 +13,26 @@ Token file: ~/.hermes/profiles/trader/mcp-tokens/robinhood.json
 """
 
 import json
+import os
 import sys
-import time
 import urllib.request
-import urllib.parse
-from pathlib import Path
 
-TOKEN_FILE = Path.home() / ".hermes/profiles/trader/mcp-tokens/robinhood.json"
-CLIENT_ID = "LtLiNmbs9owbYfWgBlC68Z2VujIPuvGoAiSYr8xW"
-TOKEN_ENDPOINT = "https://api.robinhood.com/oauth2/token/"
-EXPIRY_BUFFER = 300  # refresh 5 min before expiry
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from robinhood_token import get_access_token  # noqa: E402
+
 MCP_URL = "https://agent.robinhood.com/mcp/trading"
 
 _session_id = None
 
 
 def _get_token():
-    with open(TOKEN_FILE) as f:
-        token = json.load(f)
-    if time.time() + EXPIRY_BUFFER >= float(token.get("expires_at", 0)):
-        body = urllib.parse.urlencode({
-            "grant_type": "refresh_token",
-            "refresh_token": token["refresh_token"],
-            "client_id": CLIENT_ID,
-        }).encode()
-        req = urllib.request.Request(
-            TOKEN_ENDPOINT, data=body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            new = json.loads(resp.read())
-        token["access_token"] = new["access_token"]
-        if "refresh_token" in new:
-            token["refresh_token"] = new["refresh_token"]
-        token["expires_at"] = time.time() + float(new.get("expires_in", 86400))
-        with open(TOKEN_FILE, "w") as f:
-            json.dump(token, f, indent=2)
-    return token["access_token"]
+    """Delegate to the shared store — single-flight refresh + atomic write.
+
+    This process is respawned on every MCP reconnect and killed on every
+    gateway restart, so it is the likelier of the two writers to race or to be
+    interrupted mid-write. See robinhood_token for what that used to cost.
+    """
+    return get_access_token()
 
 
 def _relay(msg, token):
