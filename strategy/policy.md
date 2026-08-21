@@ -49,9 +49,47 @@ Only trade these symbols. Anything else requires explicit user instruction.
   note below.
 - **Pace:** at most **1 add per symbol per calendar week**, where a week runs **Monday
   through Sunday** in US market time.
-- **Averaging down:** at most **2 total $100 adds per symbol** before an exit. This is a
-  pacing rule in its own right — it is no longer what keeps a position under the 20% cap in
-  `config/guardrails.md`, since 2 × $100 stopped reaching that cap once the account grew.
+- **Averaging down:** at most **$200 of added capital per symbol at any one time**. Each
+  $100 add commits $100; selling a fraction of a position releases that same fraction of the
+  committed amount; a full exit releases all of it. Written as a running figure per symbol:
+
+  ```
+  add of $X              ->  committed += X
+  sale of fraction f     ->  committed  = round(committed × (1 − f), cents)
+  may add $X only while     committed + X <= 200
+  ```
+
+  **Round to cents at every step — this is part of the rule, not an implementation
+  detail.** Fractional share counts do not divide evenly. The 2026-08-12 take-profit sold
+  0.424941 of 0.849883 shares, which is 49.9999412%, not half; carried at full precision the
+  committed figure lands at $100.00011766 and the next $100 add is refused by a hundredth of
+  a cent. Rounded, it is $100.00 and the add is allowed, which is what a half-sale is
+  supposed to buy back.
+
+  This is a pacing rule in its own right — it is no longer what keeps a position under the
+  20% cap in `config/guardrails.md`, since 2 × $100 stopped reaching that cap once the
+  account grew.
+
+  **A partial trim is not an exit.** It returns capital in proportion to what was sold, and
+  nothing more. The rule used to read "2 total $100 adds before an exit", which never said
+  which of those a half-sale was — and the review flagged its own guess about it every
+  session rather than following a rule. Both of the readings it was choosing between are
+  wrong in a way this one is not:
+
+  - Treating a partial trim as an exit would reset the allowance to zero. Take-profit only
+    fires at **+12% above average cost**, so the reset would arrive only when a position is
+    WINNING, while the rule exists to pace a position that is LOSING. One temporary rally
+    would clear the counter, and a name could absorb $200 more after every bounce.
+  - Treating it as nothing would make the allowance a LIFETIME budget: two adds and that
+    symbol is closed to new capital until it is fully liquidated, however much was later
+    sold at a profit and however long ago.
+
+  As a standing budget instead, the exposure bound is the same $200 at every moment, and the
+  capital a profitable trim released can go back to work. In practice trims and take-profits
+  are both 50%, so the rule reads: **a half-sale buys back one add.**
+
+  It also states what a count never could. REDISTRIBUTE buys are not $100 — the current
+  session proposes $65 each — and "is a $65 buy one add?" had no answer. Here it commits $65.
 - Respect the daily **and weekly** order counts and the confirmation policy in
   `config/guardrails.md`.
 

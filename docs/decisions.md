@@ -117,3 +117,39 @@ belongs nowhere.
 Not addressed here: the Discord side is still send-only. The gateway has run with one
 platform since 2026-06-13, so "confirm in the interactive session" has nowhere to land on
 Discord — see the note in operations.md.
+
+
+## 14. Averaging down is a standing budget, not a count of adds
+`strategy/policy.md` said "at most 2 total $100 adds per symbol **before an exit**" and never
+defined whether a partial trim was that exit. It mattered: take-profit and TRIM both sell 50%,
+so the question came up constantly, and the review was flagging its own guess every session
+rather than following a rule — proposing REDISTRIBUTE → MSFT $65 / NVDA $65 / AMZN $65 under
+one reading while noting it would be MSFT $98 / NVDA $98 under the other.
+
+Both readings it was choosing between are wrong in a way the replacement is not:
+
+- **Partial trim resets the count.** Take-profit fires only at +12% above average cost, so the
+  reset arrives only when a position is WINNING — while the rule exists to pace one that is
+  LOSING. A single temporary rally clears it, and a name can absorb $200 more after every
+  bounce.
+- **Partial trim counts for nothing.** The allowance becomes a LIFETIME budget: two adds and
+  the symbol is closed to new capital until fully liquidated, however much was later sold at a
+  profit and however long ago.
+
+→ **$200 of added capital per symbol at any one time.** An add commits its dollar amount; a
+sale releases that fraction of the committed figure; a full exit releases all of it. The
+exposure bound is the same $200 at every moment as the lifetime reading, and the capital a
+profitable trim released can go back to work. In practice both exit sizes are 50%, so it reads:
+a half-sale buys back one add.
+
+It also answers what a count could not. REDISTRIBUTE buys are not $100 — $65 in the sessions
+that raised this — and "is a $65 buy one add?" had no answer. It commits $65.
+
+Rounded to cents at every step, which is part of the rule rather than an implementation
+detail: the 2026-08-12 take-profit sold 0.424941 of 0.849883 shares — 49.9999412%, not half —
+and at full precision that leaves $100.00011766 committed and refuses the next $100 add by a
+hundredth of a cent. Found by replaying the rule over the real fills before shipping it.
+
+Computed per session by replaying `get_equity_orders` (live, not the CSV export), so there is no
+new state to keep. If that history does not reach the position's opening the figure is not
+trustworthy: the review says so and treats the symbol as capped, which is the safe direction.
