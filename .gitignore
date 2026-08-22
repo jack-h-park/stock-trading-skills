@@ -5,3 +5,11 @@ logs/cron/
 
 # notification digests (delivered via Hermes, not part of the journal)
 logs/digest/
+
+# Python bytecode and test caches. scripts/robinhood_token.py is imported by the
+# MCP proxies, so __pycache__ appears on any host that has run one — it showed up
+# untracked on the iMac and nowhere else, which is exactly how a machine-specific
+# artefact starts looking like a change somebody made.
+__pycache__/
+*.py[cod]
+.pytest_cache/
