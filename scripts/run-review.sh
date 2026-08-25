@@ -14,7 +14,7 @@
 #                  vs logs/trades/ (the trade-log check) -> logs/reconcile/<date>.md
 #   C — overview: full cross-account portfolio view -> logs/reviews/<date>.overview.md
 #   merge+digest: assemble overview into the review, write the Telegram digest,
-#                 and do the single git add/commit/push.
+#                 and write the digests. It commits nothing: logs/ is gitignored.
 #
 # READ-ONLY BY DESIGN: the --allowedTools whitelist below grants only Robinhood
 # *read* tools + file write + git. place_equity_order / cancel_equity_order are
@@ -175,7 +175,7 @@ READ_ALLOWED=(
 )
 DIGEST_ALLOWED=(
   "Read" "Write" "Edit" "Grep" "Glob"
-  "Bash(git add:*)" "Bash(git commit:*)" "Bash(git push:*)" "Bash(git status:*)"
+  "Bash(git status:*)"
 )
 
 CRITICAL_RO="CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circumstances. Do not call place_equity_order or cancel_equity_order. Do not write to the Google Sheet. Do NOT run any git command — committing is handled by a separate step."
@@ -211,7 +211,7 @@ PROMPT_B="You are running the scheduled, READ-ONLY reconcile step for Jack's bro
 Steps:
 1. Read skills/reconcile/SKILL.md, config/holdings-sheet.md and config/trade-log-check.md.
 2. SHEET DRIFT: using the Robinhood MCP get_equity_positions for the Long-term and Mid-term accounts in the mapping, and the mcp__google-drive__read_holdings tool (reads the full holdings sheet automatically; use mcp__google-drive__read_sheet if you need a custom range), diff Robinhood live positions against the sheet per the thresholds in the skill.
-2b. TRADE-LOG CHECK: call mcp__robinhood__get_equity_orders for the Agentic account <AGENTIC_ACCOUNT> with state=filled and placed_agent=agentic. Keep only fills whose date is within the lookback window AND on or after the floor date in config/trade-log-check.md — silently discard everything before the floor, which is the documented pre-existing backlog in logs/trades/README.md and is not a finding. For each remaining fill, Glob/Read logs/trades/<fill-date>.md and decide whether it covers that fill: the entry names the order id, or failing that the same symbol and side on that date. Any fill with no covering entry is a finding, and so is any fill you cannot decide — the config fixes the tie-break toward reporting. This is bookkeeping about THIS repo's journal, not a position discrepancy and not an unauthorised trade: the broker is right and the log is incomplete. Do NOT write, create or amend anything under logs/trades/ — reporting the gap is the whole job, and writing an entry from broker data would fabricate a decision record (docs/decisions.md#15).
+2b. TRADE-LOG CHECK: call mcp__robinhood__get_equity_orders for the Agentic account <AGENTIC_ACCOUNT> with state=filled and placed_agent=agentic. Keep only fills whose date is within the lookback window AND on or after the floor date in config/trade-log-check.md — silently discard everything before the floor, which is the documented pre-existing backlog in the untracked logs/trades/README.md and is not a finding. For each remaining fill, Glob/Read logs/trades/<fill-date>.md and decide whether it covers that fill: the entry names the order id, or failing that the same symbol and side on that date. Any fill with no covering entry is a finding, and so is any fill you cannot decide — the config fixes the tie-break toward reporting. This is bookkeeping about THIS repo's journal, not a position discrepancy and not an unauthorised trade: the broker is right and the log is incomplete. Do NOT write, create or amend anything under logs/trades/ — reporting the gap is the whole job, and writing an entry from broker data would fabricate a decision record (docs/decisions.md#15).
 3. Write both results to logs/reconcile/${TODAY}.md, the trade-log findings under their own '## Trade-log check' heading per the alert wording in config/trade-log-check.md. Write that heading even when the window is clean. Where you note that the Agentic account was not sheet-reconciled, say which reconcile it is out of scope for and that the trade-log check covers it — do not write the bare sentence 'Agentic account (<AGENTIC_ACCOUNT>) is out of scope for this reconcile', which reads as though the one account this repo trades is the one account nothing checks. Report only — do NOT write to the sheet. Do not commit.
 
 ${CRITICAL_RO}"
@@ -342,7 +342,7 @@ Steps:
    - If the overview flagged any position (notable drawdown ≤ −15% or gain ≥ +50%), one line: '⚠️ N positions flagged across all accounts — see full review'.
    - NO briefing note. The morning briefing already sent Jack its own act-now and this-week items on this same channel, hours earlier; repeating them here — at greater length, as this message did on 2026-08-11 with the TQQQ CPI item — spends his attention on something he has read and makes the afternoon message look like news when it is a ledger. If a briefing observation exists BECAUSE of an Agentic signal, it belongs in the Agentic message (step 3a) next to the proposal it explains.
    - Whenever an item concerns a holding outside the Agentic account, say so, so it is never mistaken for something this sleeve can act on.
-4. Stage and commit: 'git add logs/reviews/${TODAY}.md logs/reconcile/${TODAY}.md' then 'git commit' with a concise message like 'review(${TODAY}): scheduled post-close review — N BUY signals, M reconcile alerts, K unlogged trades'. Then 'git push' (ignore push failure). Do NOT git add logs/digest.
+4. Do NOT commit or push anything. logs/ is gitignored: this repo is public, and the journal names positions and balances. The reports stay on this machine and reach Jack through the digest below; the archive under $STOCK_DATA_DIR/trading-logs/ is where history is kept.
 
 CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. Only stage logs/reviews and logs/reconcile — never logs/digest."
 

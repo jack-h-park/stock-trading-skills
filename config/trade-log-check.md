@@ -9,7 +9,7 @@ guarantees. `scripts/run-review.sh` always logs, because the script makes it a
 step. Orders are placed in interactive sessions, where the
 "review → confirm → place → log" contract in `skills/trade/SKILL.md` is a written
 instruction and nothing enforces it — and between 2026-06-23 and 2026-08-13
-eleven filled orders produced no entry at all (`logs/trades/README.md`). A
+eleven filled orders produced no entry at all (the backlog note kept with the logs (`logs/trades/README.md`, untracked)). A
 contract nobody can skip is better than a contract nobody remembers, and the
 only place it can be made unskippable is after the fact.
 
@@ -31,7 +31,7 @@ manual activity and have no log contract to violate.
 
 The floor is the day the check was installed. The eleven pre-floor fills are real
 and unlogged, and no log entry for them is coming — they are documented once in
-`logs/trades/README.md` instead. Without a floor the check would report the same
+the backlog note kept with the logs (`logs/trades/README.md`, untracked) instead. Without a floor the check would report the same
 eleven every afternoon forever, and a warning that is always on is a warning that
 stops being read. Do not move the floor forward to silence a *new* miss; the
 correct fix for a new miss is to write the entry.
@@ -42,7 +42,7 @@ A fill is **covered** when `logs/trades/<fill-date>.md` exists and names the
 order id **in full**, or names the same symbol and side on that date. Prefer the
 order id — symbol+side is the fallback for an entry written before the id was
 known, and it is genuinely weaker: four of the eleven orders in
-`logs/trades/README.md` were placed in one session, two of them sharing the id
+the backlog note kept with the logs (`logs/trades/README.md`, untracked) were placed in one session, two of them sharing the id
 prefix `6a7d3761`, so neither an abbreviated id nor symbol+side separates every
 real case. Never match on a prefix.
 

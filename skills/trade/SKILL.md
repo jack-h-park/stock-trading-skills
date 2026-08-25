@@ -33,7 +33,7 @@ and calls only the abstract ops in `providers/_contract.md`.
    including the review warnings and the resulting order id. Do it in this session, before
    you move on: the fill is recoverable from the broker forever, the *reason* only exists
    here and only right now. Eleven trades were once placed without it and their rationale is
-   gone (`logs/trades/README.md`). The next scheduled review will hold the broker's filled
+   gone (the untracked backlog note in `logs/trades/`). The next scheduled review will hold the broker's filled
    orders against this directory and report anything missing
    (`config/trade-log-check.md`) — so a skipped log surfaces within a day, but it surfaces
    as a gap that can no longer be filled honestly.

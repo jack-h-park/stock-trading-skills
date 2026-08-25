@@ -165,7 +165,7 @@ no confirmation, no policy rule, no reason that symbol on that day. Written in t
 than an empty directory — an empty directory is honestly empty. It would also stand a second
 copy of these trades beside the Observatory database, which `docs/data-sources.md` argues
 against for this exact account. The eleven are recorded once, as prose, in
-`logs/trades/README.md`, including what the fill data does and does not recover and where on
+the backlog note kept with the logs (`logs/trades/README.md`, untracked), including what the fill data does and does not recover and where on
 imac-hermes the rest might still be found. It recovers more than expected — the eleven orders
 were five sessions, and the AMZN sale matches the take-profit rule exactly (average cost
 $235.3260, sold at +13.46% past the +12% trigger, quantity 0.849883/2 floored to six decimals

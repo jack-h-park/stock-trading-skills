@@ -13,3 +13,12 @@ logs/digest/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# The decision journal itself. It names positions, quantities and balances, and
+# this repo is public — so the logs stay on the machine that wrote them and the
+# archive under $STOCK_DATA_DIR/trading-logs/ holds the history. Only the format
+# contract (skills/log/SKILL.md) and the check parameters are tracked here.
+logs/
+
+# Real account numbers and sheet ids behind the placeholders. See accounts.example.md.
+config/accounts.local.md
