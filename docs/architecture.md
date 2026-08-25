@@ -67,7 +67,7 @@ in logs. Strategy, guardrails, skills, and the cron are reused as-is.
 | `providers/` | Contract + per-broker adapters/capabilities |
 | `scripts/run-review.sh` | Host-portable headless runner (review + reconcile + commit) |
 | `scripts/install-launchd.sh` | Generates + loads the LaunchAgent on the host machine |
-| `logs/reviews/` , `logs/reconcile/` | Dated decision journal (tracked in git) |
+| `logs/reviews/` , `logs/reconcile/` | Dated decision journal (gitignored — stays on the host) |
 | `logs/trades/` | Order decision journal — see its README for the 2026-06/08 gap |
 | `logs/cron/` | Run logs (git-ignored) |
 
@@ -102,7 +102,7 @@ Mid-term `<MIDTERM_ACCOUNT>`) and external brokerages are **reference/reconcile 
     ├─ Robinhood MCP: portfolio, positions, quotes, historicals  (read-only)
     ├─ compute 20-day-high dip signals  →  logs/reviews/<date>.md
     ├─ Google Drive MCP: read sheet  →  diff vs RH  →  logs/reconcile/<date>.md
-    └─ git add/commit/push
+    └─ write the digest (nothing is committed — logs/ is gitignored)
         ⚠ tool whitelist excludes place/cancel order + sheet write → cannot trade
 
 [MANUAL, interactive session, market hours]  user: "execute the proposal"

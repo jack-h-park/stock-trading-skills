@@ -11,13 +11,14 @@ US Pacific time) so it isn't skipped when the laptop sleeps.
 - LaunchAgent label: `com.jackpark.trading-agent-review`
 - Schedule: weekdays (Mon–Fri) **13:30 PT = 16:30 ET** (30 min after the US close)
 - Repo on host: `~/workspace/ai-assets/jackhpark-trading-agent`
-- Runner: `scripts/run-review.sh` → headless `claude -p` (review + reconcile + commit/push)
+- Runner: `scripts/run-review.sh` → headless `claude -p` (review + reconcile + digest; commits nothing)
 
 ## Daily flow
 
 1. **Auto (13:30 PT):** the job writes `logs/reviews/<date>.md` (buy/sell proposals) and
-   `logs/reconcile/<date>.md` (sheet drift), then commits + pushes. Read-only.
-2. **You:** read the report (in the repo or on GitHub).
+   `logs/reconcile/<date>.md` (sheet drift), and the digests. Read-only, and it commits
+   nothing: `logs/` is gitignored because the journal names positions and balances.
+2. **You:** read the digest delivered by the scheduler, or the report on the host itself.
 3. **To act:** in an interactive session during market hours (PT 06:30–13:00), ask the
    agent to execute — it recomputes live, runs `review_equity_order`, you confirm, it places
    and logs to `logs/trades/<date>.md`.
@@ -122,10 +123,12 @@ is reachable headlessly — only the GUI session has it.
 3. Connector dropped → `claude mcp list` won't show claude.ai connectors (they're runtime-
    injected); confirm by a GUI `launchctl kickstart` test, check the run log for tool errors.
 
-### Push rejected / commits not on GitHub
-`run-review.sh` does `git pull --rebase --autostash` at start, so external commits normally
-fast-forward. If a run still couldn't push (network), the commit stays local; the next run
-pulls and pushes it. Check `git status -sb` and `git log origin/main..main`.
+### A report exists on one machine and not the other
+That is expected. `logs/` is gitignored, so a report lives only on the machine that wrote
+it — normally the scheduling host. The archive under `$STOCK_DATA_DIR/trading-logs/` is
+where history is kept. Note the consequence for the trade-log check: it compares broker
+fills against the `logs/trades/` it can see, so an order logged on a different machine
+still reads as unlogged.
 
 ### iMac was asleep at 13:30
 launchd runs the missed calendar job right after the machine next wakes (calendar jobs

@@ -1,106 +1,165 @@
-# jackhpark-trading-agent
+# trading-agent
 
-Skill-centric operating layer for **agentic brokerage trading**. Robinhood is the first
-connected provider; the repo is designed so additional brokerages plug in as *providers*,
-not as new repos.
+A skill-first operating layer for **agentic brokerage trading**: the strategy, the
+guardrails, the logging contract, and the provider adapters that map one broker's
+tools onto a common interface. Robinhood is the first connected provider.
 
-## Documentation
+There is almost no code here, and that is the design. Behaviour lives in
+`skills/*/SKILL.md` and `config/*.md`, which an LLM agent reads and follows;
+execution happens through a connected brokerage MCP server. Code appears only
+where a helper genuinely earns it — a token refresher, a market-day guard, the
+headless runner.
 
-- [docs/architecture.md](docs/architecture.md) — system design, provider abstraction, data
-  flow, control flow, safety model.
-- [docs/operations.md](docs/operations.md) — runbook: schedule, hosting, install/move,
-  verification, troubleshooting, placing a live trade.
-- [docs/decisions.md](docs/decisions.md) — decision log with rationale for each major choice.
+> **Real money.** Order placement is irreversible and the account owner is
+> responsible for every order placed, per the broker's agentic-trading terms.
+> The default posture is confirm-before-every-order. Read
+> [Safety](#safety) before running any of this.
 
-## What this repo is
+## How this relates to the Hermes trader agent
 
-- **Operating layer, not a code platform.** Trading execution happens through a connected
-  brokerage MCP (Robinhood Agent MCP today). This repo holds the *operating logic*:
-  strategy, guardrails, logging contract, periodic review, and the provider adapters that
-  map a broker's tools onto a common contract.
-- **Skill-first.** Behavior lives in `skills/*/SKILL.md`. Code is added only when a helper
-  (log aggregation, etc.) genuinely earns it.
-- **Markdown logs.** Every order and every periodic review is appended to `logs/` as md.
+These are two halves of one system, and the split is worth understanding before
+you read anything else.
+
+|  | `trading-agent` (this repo) | Hermes `trader` profile |
+|---|---|---|
+| Answers | **what to trade, and under what limits** | **when to run it, and who gets told** |
+| Contains | strategy, guardrails, skills, provider adapters, log contract | scheduler, Telegram delivery, the interactive session that can execute |
+| Lives in | this repo, versioned | the operator's agent runtime, not here |
+| Needs the other? | **No** — runs standalone under launchd or any scheduler | Yes — it schedules *this* repo's runner |
+
+[Hermes](https://github.com/jack-h-park) is the author's own always-on agent
+runtime: it owns the cron store, the notification channels, and the interactive
+profile that a human talks to. It is **not required to use this repo.** Hermes
+invokes `scripts/run-review.sh` as a plain script and delivers the digest; swap
+it for launchd, systemd, or a CI schedule and nothing in `strategy/`,
+`config/`, `skills/` or `providers/` changes.
+
+The reason the split matters: **the automated path cannot trade, and the
+interactive path can.** `scripts/run-review.sh` whitelists only read tools, so
+the scheduled job physically cannot place an order. Execution happens only when
+a human asks for it in an interactive session — which is where the operator's
+agent runtime (Hermes here, whatever you use in your case) comes in.
+
+## Using it yourself
+
+This repo assumes you bring three things:
+
+1. **An LLM agent that can read markdown instructions and call MCP tools.** The
+   author runs Claude Code; the skills are plain markdown and carry no
+   Claude-specific syntax, but they are written to be *followed*, not parsed.
+2. **A brokerage MCP server.** Robinhood's Agent MCP is what
+   `providers/robinhood/` maps. Any broker with a tool surface can be added —
+   see [Adding a brokerage](#adding-a-brokerage).
+3. **Your own judgement about the strategy.** `strategy/policy.md` is one
+   person's dip-buy rules on an eight-symbol universe with $100 notional orders.
+   It is an example of the *shape* a policy takes here, not advice. Replace it.
+
+### What you must change before running
+
+| File | Why |
+|---|---|
+| `config/accounts.local.md` | Create it from `config/accounts.example.md`. Every doc refers to accounts by placeholder (`<AGENTIC_ACCOUNT>`); this file is where the real numbers live, and it is gitignored. |
+| `strategy/policy.md` | The universe, entry and exit rules, and prioritisation. |
+| `config/guardrails.md` | Per-order and per-day caps, the kill switch, and when — if ever — the agent may place without asking. |
+| `config/holdings-sheet.md` | Only if you reconcile against a spreadsheet. Delete the reconcile skill if you don't. |
+
+### Then
+
+```bash
+git clone git@github.com:jack-h-park/trading-agent.git trading-agent
+cd trading-agent
+cp config/accounts.example.md config/accounts.local.md   # fill in, then chmod 600
+FORCE=1 bash scripts/run-review.sh                        # one read-only run, now
+```
+
+A run queries the broker live, computes signals, reconciles if configured, and
+writes a dated report under `logs/`. Nothing is committed and no order is
+placed.
 
 ## Layout
 
 | Path | Role | Broker-specific? |
 |---|---|---|
-| `strategy/policy.md` | Trading rules, universe, position limits, prohibitions | No |
-| `config/guardrails.md` | Hard safety limits + confirmation policy | No |
-| `skills/trade/SKILL.md` | Order flow: review → confirm → place → log | No |
-| `skills/portfolio-review/SKILL.md` | Periodic portfolio/market check → md report | No |
-| `skills/reconcile/SKILL.md` | Drift check: Robinhood live vs manual Google Sheet | No |
-| `skills/log/SKILL.md` | Append-only md log format contract | No |
-| `config/holdings-sheet.md` | Sheet fileId, account mapping, drift thresholds | Robinhood map |
+| `strategy/policy.md` | What to trade: universe, entry/exit, prioritisation | No |
+| `config/guardrails.md` | Hard limits + confirmation policy | No |
+| `config/accounts.example.md` | Shape of the untracked file that resolves account placeholders | No |
+| `config/trade-log-check.md` | Parameters for the unlogged-fill check | No |
+| `config/holdings-sheet.md` | Sheet id, account mapping, drift thresholds | Sheet map |
 | `config/observatory-context.md` | Whole-portfolio reference context, and the limits on using it | No |
-| `providers/_contract.md` | Abstract interface every provider must satisfy | No |
+| `skills/trade/SKILL.md` | Order flow: review → confirm → place → log | No |
+| `skills/portfolio-review/SKILL.md` | Periodic signal scan → dated report (read-only) | No |
+| `skills/reconcile/SKILL.md` | Broker vs spreadsheet drift check (read-only) | No |
+| `skills/log/SKILL.md` | Append-only markdown log format contract | No |
+| `providers/_contract.md` | The interface every provider must satisfy | No |
 | `providers/<broker>/adapter.md` | Maps broker tools ↔ the contract | **Yes** |
-| `providers/<broker>/capabilities.md` | What the broker can/can't do | **Yes** |
-| `logs/trades/YYYY-MM-DD.md` | Executed orders | broker column |
-| `logs/reviews/YYYY-MM-DD.md` | Periodic review reports | broker column |
+| `providers/<broker>/capabilities.md` | What the broker can and cannot do | **Yes** |
+| `scripts/run-review.sh` | Headless runner: review + reconcile + digest | No |
 
-## Adding a new brokerage later
+**`logs/` is not in this repo.** The journal names positions, quantities and
+balances, so it stays on the machine that writes it. Only the format contract
+(`skills/log/SKILL.md`) and the check parameters are tracked. A fresh clone
+creates the directories on first run.
 
-1. Create `providers/<broker>/adapter.md` mapping its tools onto `providers/_contract.md`.
-2. Create `providers/<broker>/capabilities.md` for its constraints.
-3. Strategy, guardrails, logging, and review skills are reused as-is. Add a `broker:` value
-   to the log front matter. **No new repo.**
+## Documentation
 
-Keep the contract thin — refine it only when a second provider actually lands.
+- [docs/architecture.md](docs/architecture.md) — system design, provider abstraction, data flow, control flow, safety model.
+- [docs/operations.md](docs/operations.md) — runbook: schedule, hosting, install/move, verification, troubleshooting, placing a live trade.
+- [docs/decisions.md](docs/decisions.md) — decision log with the rationale behind each major choice.
 
-## Scheduled review (local launchd)
+## Adding a brokerage
 
-A read-only `portfolio-review` runs automatically on weekdays at **13:30 PT (16:30 ET, 30 min
-after the US close)** via a macOS LaunchAgent, hosted on the always-on iMac
-(`hermes-runner@imac-hermes`) so it isn't skipped when the laptop is asleep.
+1. Write `providers/<broker>/adapter.md`, mapping its tools onto `providers/_contract.md`.
+2. Write `providers/<broker>/capabilities.md` for its constraints — what it refuses,
+   what it silently omits, where its data disagrees with itself.
+3. Strategy, guardrails, logging and the review skills are reused as-is; add a
+   `broker:` value to the log front matter. **No new repo.**
 
-**Install / move the job to a host** (run on that machine, logged in as the owning user):
+Keep the contract thin. Refine it when a second provider actually lands, not before.
 
-```bash
-git clone git@github.com:jack-h-park/trading-agent.git ~/workspace/ai-assets/jackhpark-trading-agent
-cd ~/workspace/ai-assets/jackhpark-trading-agent
-# Claude must be logged into the SAME claude.ai account (so the Robinhood + Google Drive
-# connectors are available). Verify, then install the LaunchAgent:
-bash scripts/install-launchd.sh
-# Test in the GUI session (Keychain/connectors only work there, not over plain ssh):
-launchctl kickstart -k gui/$(id -u)/com.jackpark.trading-agent-review
-```
+## Scheduling
 
-> **Keychain note:** Claude stores its OAuth token in the macOS login Keychain, which is only
-> accessible from the **GUI login session** (where launchd LaunchAgents run) — not from a
-> non-interactive `ssh` shell. So `claude -p` works under launchd but a bare ssh test shows
-> "Not logged in". Verify via `launchctl kickstart`, not ssh.
+The runner is a plain script, so any scheduler works. Two are supported here:
 
-- Runner: [`scripts/run-review.sh`](scripts/run-review.sh) — invokes headless `claude -p`,
-  which queries Robinhood **live** (no local data store), computes dip signals, writes a
-  dated report to `logs/reviews/`, **reconciles Robinhood vs the Google Sheet** into
-  `logs/reconcile/`, and commits.
-- Schedule: [`scripts/com.jackpark.trading-agent-review.plist`](scripts/com.jackpark.trading-agent-review.plist)
-  (tracked copy; the active copy lives in `~/Library/LaunchAgents/`).
-- **Read-only by construction:** the runner whitelists only Robinhood *read* tools + file
-  write + git via `--allowedTools`. `place_equity_order` / `cancel_equity_order` are not
-  whitelisted, so the scheduled job physically cannot trade (verified).
+**Standalone (launchd, macOS).** `bash scripts/install-launchd.sh` generates and
+loads a LaunchAgent for weekdays at 13:30 PT — 30 minutes after the US close.
+Use this if you are not running an agent runtime of your own.
 
-Operate it:
+**Hermes cron.** `scripts/hermes/install-cron.sh` declares the same job under the
+author's `trader` profile, delivering the digest to Telegram. It is iMac-only and
+refuses to run as any other user; it exists so the job's definition stays
+versioned in this repo rather than in the runtime. The job is created **paused** —
+installing is not enabling.
+
+> **Keychain note (macOS).** Claude stores its OAuth token in the login Keychain,
+> which is reachable from the **GUI login session** where LaunchAgents run — not
+> from a plain `ssh` shell. `claude -p` therefore works under launchd while a bare
+> ssh test reports "Not logged in". Verify with
+> `launchctl kickstart -k gui/$(id -u)/<label>`, not over ssh.
 
 ```bash
-# load / unload
-launchctl load -w  ~/Library/LaunchAgents/com.jackpark.trading-agent-review.plist
-launchctl unload   ~/Library/LaunchAgents/com.jackpark.trading-agent-review.plist
-# run once now (bypasses the weekend guard)
-FORCE=1 bash scripts/run-review.sh
-# logs
-cat logs/cron/$(date +%F).run.log
+FORCE=1 bash scripts/run-review.sh    # run once now, bypassing the market-day guard
+cat logs/cron/$(date +%F).run.log     # what it did
 ```
 
-Data is never accumulated locally — Robinhood is the source of truth and is queried fresh
-each run. `logs/reviews/` is a *decision journal* (the "why"), not a data store; `logs/cron/`
-holds run logs and is git-ignored.
+## Safety
 
-## Safety & responsibility
+- **The scheduled job cannot trade.** `place_equity_order` and
+  `cancel_equity_order` are absent from the runner's `--allowedTools` whitelist,
+  so this is a structural property rather than an instruction the agent is asked
+  to respect.
+- **Every live order is confirmed** unless `config/guardrails.md` grants standing
+  authorisation for a narrow, explicitly bounded case.
+- **Nothing is accumulated locally.** The broker is the source of truth and is
+  queried fresh on every run.
+- **An unlogged fill is caught after the fact.** The interactive path is where the
+  "review → confirm → place → log" contract can be skipped, so the daily review
+  compares filled orders at the broker against `logs/trades/` and reports any
+  fill with no entry. See `config/trade-log-check.md` — that check exists because
+  eleven real orders once produced no journal entry at all.
 
-Order placement moves real money and is **irreversible**. The user is ultimately
-responsible for every trade the agent places (per Robinhood's agentic-trading terms).
-The default posture is **confirm before every live order** unless `config/guardrails.md`
-grants explicit standing authorization for a narrow, well-defined case.
+None of this is investment advice, and none of it removes the account owner's
+responsibility for what the agent does.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
