@@ -13,7 +13,7 @@
 
 set -uo pipefail
 
-REPO="${TRADING_AGENT_REPO:-$HOME/workspace/ai-assets/jackhpark-trading-agent}"
+REPO="${TRADING_AGENT_REPO:-$HOME/workspace/ai-assets/jackhpark-stock-trading-skills}"
 RUNNER="$REPO/scripts/run-review.sh"
 DATE_ISO="$(date +%F)"
 RUNLOG="$REPO/logs/cron/${DATE_ISO}.run.log"

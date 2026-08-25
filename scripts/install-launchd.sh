@@ -9,7 +9,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-LABEL="com.jackpark.trading-agent-review"
+LABEL="com.jackpark.stock-trading-review"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SCRIPT="$HERE/run-review.sh"
 

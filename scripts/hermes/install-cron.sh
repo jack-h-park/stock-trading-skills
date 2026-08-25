@@ -12,7 +12,7 @@
 # create with --deliver local to dry-run into the cron log.
 #
 # Usage (on iMac, as hermes-runner), after the trader profile is bootstrapped:
-#   TRADING_AGENT_REPO=~/workspace/ai-assets/jackhpark-trading-agent \
+#   TRADING_AGENT_REPO=~/workspace/ai-assets/jackhpark-stock-trading-skills \
 #     scripts/hermes/install-cron.sh [telegram|local]
 # Then enable in the maintenance window:
 #   <hermes> --profile trader cron resume trading-review

@@ -1,7 +1,7 @@
 ---
 name: portfolio-review
 description: >
-  Run a periodic portfolio and market check for the trading-agent and write a dated markdown
+  Run a periodic portfolio and market check for the stock-trading-skills and write a dated markdown
   report. Use for daily/post-close reviews, on-demand "how's my portfolio" checks, or as the
   body of a scheduled cron job. Read-only by default — proposes, does not place, orders.
 ---

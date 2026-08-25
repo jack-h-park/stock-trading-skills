@@ -8,9 +8,9 @@ For design context see [architecture.md](architecture.md).
 The scheduled job is hosted on the always-on iMac **`hermes-runner@imac-hermes`** (macOS,
 US Pacific time) so it isn't skipped when the laptop sleeps.
 
-- LaunchAgent label: `com.jackpark.trading-agent-review`
+- LaunchAgent label: `com.jackpark.stock-trading-review`
 - Schedule: weekdays (Mon–Fri) **13:30 PT = 16:30 ET** (30 min after the US close)
-- Repo on host: `~/workspace/ai-assets/jackhpark-trading-agent`
+- Repo on host: `~/workspace/ai-assets/jackhpark-stock-trading-skills`
 - Runner: `scripts/run-review.sh` → headless `claude -p` (review + reconcile + digest; commits nothing)
 
 ## Daily flow
@@ -29,9 +29,9 @@ Run **on the target machine, logged in as the owning user** (the GUI session mus
 see the Keychain note below):
 
 ```bash
-git clone git@github.com:jack-h-park/trading-agent.git \
-  ~/workspace/ai-assets/jackhpark-trading-agent
-cd ~/workspace/ai-assets/jackhpark-trading-agent
+git clone git@github.com:jack-h-park/stock-trading-skills.git \
+  ~/workspace/ai-assets/jackhpark-stock-trading-skills
+cd ~/workspace/ai-assets/jackhpark-stock-trading-skills
 
 # 1. Claude Code installed and logged into the SAME claude.ai account
 #    (so the Robinhood + Google Drive connectors are present):
@@ -52,16 +52,16 @@ launchd:
 # Trigger a run now (runs in the GUI session → Keychain/connectors available).
 # NOTE: run-review.sh skips on weekends unless FORCE=1; launchctl can't pass env,
 # so for a weekend smoke-test use the temp-agent method below.
-launchctl kickstart -k gui/$(id -u)/com.jackpark.trading-agent-review
+launchctl kickstart -k gui/$(id -u)/com.jackpark.stock-trading-review
 sleep 2
-tail -f ~/workspace/ai-assets/jackhpark-trading-agent/logs/cron/$(date +%F).run.log
+tail -f ~/workspace/ai-assets/jackhpark-stock-trading-skills/logs/cron/$(date +%F).run.log
 # success looks like:  run-review start … / run-review end rc=0 …
 ```
 
 Then check outputs:
 
 ```bash
-cd ~/workspace/ai-assets/jackhpark-trading-agent
+cd ~/workspace/ai-assets/jackhpark-stock-trading-skills
 ls -la logs/reviews/$(date +%F).md logs/reconcile/$(date +%F).md
 git log --oneline -2
 ```
@@ -69,8 +69,8 @@ git log --oneline -2
 **Weekend / forced smoke-test** (bypasses the weekday guard, still in GUI context):
 
 ```bash
-LBL=com.jackpark.trading-agent-review-test
-REPO=~/workspace/ai-assets/jackhpark-trading-agent
+LBL=com.jackpark.stock-trading-review-test
+REPO=~/workspace/ai-assets/jackhpark-stock-trading-skills
 cat > ~/Library/LaunchAgents/$LBL.plist <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -90,8 +90,8 @@ launchctl bootout gui/$(id -u)/$LBL && rm ~/Library/LaunchAgents/$LBL.plist
 ## Stopping / removing the job
 
 ```bash
-launchctl bootout gui/$(id -u)/com.jackpark.trading-agent-review
-rm ~/Library/LaunchAgents/com.jackpark.trading-agent-review.plist
+launchctl bootout gui/$(id -u)/com.jackpark.stock-trading-review
+rm ~/Library/LaunchAgents/com.jackpark.stock-trading-review.plist
 ```
 
 Run this on any machine that should **stop** hosting the job (e.g. after moving it) so only

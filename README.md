@@ -1,14 +1,19 @@
-# trading-agent
+# stock-trading-skills
 
 A skill-first operating layer for **agentic brokerage trading**: the strategy, the
 guardrails, the logging contract, and the provider adapters that map one broker's
 tools onto a common interface. Robinhood is the first connected provider.
 
-There is almost no code here, and that is the design. Behaviour lives in
-`skills/*/SKILL.md` and `config/*.md`, which an LLM agent reads and follows;
-execution happens through a connected brokerage MCP server. Code appears only
-where a helper genuinely earns it — a token refresher, a market-day guard, the
-headless runner.
+**This repo is not an agent.** It has no loop of its own and decides nothing on
+its own — it is what an agent *reads*. Trading behaviour lives in
+`skills/*/SKILL.md`, `strategy/policy.md` and `config/*.md` as prose an LLM
+follows; the agency belongs to whatever runtime executes them.
+
+It is also more than four skill files, and the name should not hide that. About
+half of it is infrastructure: two MCP proxy servers, a broker token refresher, a
+market-day guard, a headless runner, and the installers that schedule it. The
+division is clean, though — **every trading decision is markdown, and all the
+code is plumbing.**
 
 > **Real money.** Order placement is irreversible and the account owner is
 > responsible for every order placed, per the broker's agentic-trading terms.
@@ -20,7 +25,7 @@ headless runner.
 These are two halves of one system, and the split is worth understanding before
 you read anything else.
 
-|  | `trading-agent` (this repo) | Hermes `trader` profile |
+|  | `stock-trading-skills` (this repo) | Hermes `trader` profile |
 |---|---|---|
 | Answers | **what to trade, and under what limits** | **when to run it, and who gets told** |
 | Contains | strategy, guardrails, skills, provider adapters, log contract | scheduler, Telegram delivery, the interactive session that can execute |
@@ -45,8 +50,21 @@ agent runtime (Hermes here, whatever you use in your case) comes in.
 This repo assumes you bring three things:
 
 1. **An LLM agent that can read markdown instructions and call MCP tools.** The
-   author runs Claude Code; the skills are plain markdown and carry no
-   Claude-specific syntax, but they are written to be *followed*, not parsed.
+   author runs Claude Code. The policy content ports anywhere — it is prose —
+   but two things do not, and one of them matters a great deal:
+
+   | Part | Ports to another runtime? |
+   |---|---|
+   | `strategy/`, `config/`, `providers/*.md` | Yes — runtime-agnostic prose |
+   | `SKILL.md` layout | The content does; the convention is Claude Code's |
+   | `scripts/run-review.sh` | No — it invokes `claude -p` directly |
+   | **"the scheduled run cannot trade"** | **No — it comes from `--allowedTools`** |
+
+   That last row is the one to read twice. The safety property this repo leans
+   on is not a rule the agent is asked to obey; it is the absence of the
+   order-placing tools from the runner's whitelist, which is a Claude Code
+   feature. Port this elsewhere without an equivalent tool restriction and the
+   guarantee is silently gone while the docs still claim it.
 2. **A brokerage MCP server.** Robinhood's Agent MCP is what
    `providers/robinhood/` maps. Any broker with a tool surface can be added —
    see [Adding a brokerage](#adding-a-brokerage).
@@ -66,8 +84,8 @@ This repo assumes you bring three things:
 ### Then
 
 ```bash
-git clone git@github.com:jack-h-park/trading-agent.git trading-agent
-cd trading-agent
+git clone git@github.com:jack-h-park/stock-trading-skills.git stock-trading-skills
+cd stock-trading-skills
 cp config/accounts.example.md config/accounts.local.md   # fill in, then chmod 600
 FORCE=1 bash scripts/run-review.sh                        # one read-only run, now
 ```

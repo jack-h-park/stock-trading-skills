@@ -3,7 +3,7 @@ name: trade
 description: >
   Place, review, or cancel a brokerage order through the active provider. Use whenever the
   user wants to buy/sell a security, simulate an order, or cancel an open order in the
-  trading-agent repo. Enforces the review→confirm→place→log flow and the guardrails.
+  stock-trading-skills repo. Enforces the review→confirm→place→log flow and the guardrails.
 ---
 
 # Skill: trade

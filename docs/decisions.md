@@ -6,7 +6,7 @@ Key choices and their rationale, newest-relevant first. Lightweight ADR style.
 A live, stateful trading agent (account config, logs, cron) is operational/project-specific.
 The existing `jackhpark-ai-skills` repo is explicitly a *reusable, repo-agnostic* playbook
 library and its README forbids project-specific commands/logs. Putting the agent there would
-violate that charter. → Created `jackhpark-trading-agent` under `~/workspace/ai-assets/`
+violate that charter. → Created `jackhpark-stock-trading-skills` under `~/workspace/ai-assets/`
 (home of the other `jackhpark-*` operating-asset repos; also an Obsidian vault for easy log
 reading).
 

@@ -1,7 +1,7 @@
 ---
 name: log
 description: >
-  Markdown logging format contract for the trading-agent. Use when writing trade logs or
+  Markdown logging format contract for the stock-trading-skills. Use when writing trade logs or
   review reports so every entry is consistent, append-only, and multi-broker friendly.
 ---
 
