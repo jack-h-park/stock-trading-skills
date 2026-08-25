@@ -153,3 +153,45 @@ hundredth of a cent. Found by replaying the rule over the real fills before ship
 Computed per session by replaying `get_equity_orders` (live, not the CSV export), so there is no
 new state to keep. If that history does not reach the position's opening the figure is not
 trustworthy: the review says so and treats the symbol as capped, which is the safe direction.
+## 15. Unlogged trades: detect them, don't reconstruct them
+Between 2026-06-23 and 2026-08-13 the Agentic account filled eleven orders and `logs/trades/`
+stayed empty. Two separate questions came out of that, and they have opposite answers.
+
+**Back-fill the log from the broker? No.** The orders are fully recoverable from
+`get_equity_orders`, so it was tempting. But `logs/` is a decision journal (decision #9,
+architecture.md) and a reconstruction from broker data is entirely *what*: no review warnings,
+no confirmation, no policy rule, no reason that symbol on that day. Written in the format of
+`skills/log/SKILL.md` it would look like a decision record and be read as one, which is worse
+than an empty directory — an empty directory is honestly empty. It would also stand a second
+copy of these trades beside the Observatory database, which `docs/data-sources.md` argues
+against for this exact account. The eleven are recorded once, as prose, in
+`logs/trades/README.md`, including what the fill data does and does not recover and where on
+imac-hermes the rest might still be found. It recovers more than expected — the eleven orders
+were five sessions, and the AMZN sale matches the take-profit rule exactly (average cost
+$235.3260, sold at +13.46% past the +12% trigger, quantity 0.849883/2 floored to six decimals
+= the 0.424941 actually sold, $13.46 realized). That is the *mechanism*, and it is recoverable
+only because the policy is written down. The judgment is not: which symbols signalled and how
+they ranked, what `review_order` warned about, what was weighed before confirming, what was
+proposed and declined. The README marks the inferred half as inferred, which a back-filled log
+entry could not have done.
+
+**Enforce the contract going forward? Yes, by detection.** The gap is structural, not
+careless. `scripts/run-review.sh` always logs because the script makes logging a step; orders
+are placed in interactive sessions where "review → confirm → place → log" is a written
+instruction in `skills/trade/SKILL.md` and nothing checks it. Adding more emphasis to the
+skill would not have changed the outcome — the instruction was already there and already
+clear. What is available is that the daily review already queries Robinhood read-only, so it
+can hold filled Agentic orders against `logs/trades/` and say when one is missing. That runs
+whether or not anyone remembers, which is the property the contract lacked.
+
+Placed in job B (reconcile) rather than a new job: it is bookkeeping drift between two records
+of the same trades, which is what B already is, and B already has `get_equity_orders`
+whitelisted. Parameters — scope, 30-day lookback, floor date, matching rule — in
+`config/trade-log-check.md`. A floor date of 2026-08-24 keeps the eleven known misses out of
+the daily alert; a warning that fires every day is one that stops being read.
+
+**Agentic stays out of the *sheet* reconcile.** Its sheet section is agent-managed and
+expected to diverge, so reconciling it would manufacture permanent noise. But the wording
+"Agentic is out of scope for this reconcile" was doing more work than it should: the one
+account this repo trades was reading as the one account nothing checked. It now says which
+reconcile it is out of scope for, and names the trade-log check that covers it.

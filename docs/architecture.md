@@ -58,15 +58,17 @@ in logs. Strategy, guardrails, skills, and the cron are reused as-is.
 | `strategy/policy.md` | What to trade: universe, entry/exit, deterministic prioritization |
 | `config/guardrails.md` | How much / whether to confirm: hard limits + confirm policy |
 | `config/holdings-sheet.md` | Sheet fileId, sheet-section → RH account map, drift thresholds |
+| `config/trade-log-check.md` | Scope/lookback/floor for the trade-log check |
 | `config/observatory-context.md` | Whole-portfolio reference from the Observatory's published summary, and the limits on using it |
 | `skills/trade/SKILL.md` | Order flow: review → confirm → place → log |
 | `skills/portfolio-review/SKILL.md` | Periodic signal scan → dated report (read-only) |
-| `skills/reconcile/SKILL.md` | Robinhood vs Sheet drift check (read-only) |
+| `skills/reconcile/SKILL.md` | Robinhood vs Sheet drift + filled orders vs trade log (read-only) |
 | `skills/log/SKILL.md` | Append-only markdown log format contract |
 | `providers/` | Contract + per-broker adapters/capabilities |
 | `scripts/run-review.sh` | Host-portable headless runner (review + reconcile + commit) |
 | `scripts/install-launchd.sh` | Generates + loads the LaunchAgent on the host machine |
 | `logs/reviews/` , `logs/reconcile/` | Dated decision journal (tracked in git) |
+| `logs/trades/` | Order decision journal — see its README for the 2026-06/08 gap |
 | `logs/cron/` | Run logs (git-ignored) |
 
 ## The trading account

@@ -21,6 +21,12 @@ write to the sheet (manual updates only, by decision).
 The sheet also tracks external brokerages (Chase, Fidelity, Merrill) — those have no API
 and are out of scope for reconciliation (manual only).
 
+The **Agentic** account is deliberately not sheet-reconciled: its sheet section is
+agent-managed and expected to diverge, so diffing it would produce drift every day and a
+warning that is always on is one that stops being read. It is not therefore unchecked — it is
+the sole account covered by the trade-log check in `config/trade-log-check.md`, which holds
+its filled orders against `logs/trades/`. Say both halves whenever you report the exclusion.
+
 ## Drift thresholds (what counts as an alert)
 
 **ALERT (surface prominently):**
