@@ -302,6 +302,7 @@ for pair in "A:$TMP_A_JSON:$TMP_A_ERR" "B:$TMP_B_JSON:$TMP_B_ERR" "C:$TMP_C_JSON
   # Observatory /usage daily total still rolls up across all sub-calls.
   _log_trader_usage "trading-review" "$(cat "$jf" 2>/dev/null)"
 done
+echo "----- usage logged, entering merge $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 
 # ── Deterministic merge: fold the overview fragment into the review file. ─────
 # C owns a separate fragment file precisely so it never races A on the review
@@ -314,6 +315,13 @@ if [ -f "$OVERVIEW_FILE" ]; then
   fi
   rm -f "$OVERVIEW_FILE"
 fi
+# 2026-08-25: the run ended here with no trace and no logs/cron/<date>.status —
+# A/B/C had all completed (rc=0 each, logged above), so whatever happened next
+# left no line in this file at all. This marker exists so a repeat narrows to
+# "died merging" vs "died building/running the digest prompt" instead of the
+# whole A/B/C-to-D gap; if it recurs, the delta between this line and the next
+# one is where to look.
+echo "----- merge done, building digest prompt $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 
 # ── Digest + single commit. Thin step: reads the assembled local files only. ──
 PROMPT_D="You are writing the notification digest and committing the scheduled portfolio review for ${TODAY}. The heavy work is already done and written to local files. Do NOT call any Robinhood or Google tools.

@@ -26,10 +26,29 @@ export PATH="$PATH:/usr/bin:/bin"
 unset _d
 
 # Skip on non-NYSE trading days and notify so the skip is visible in Telegram.
-if ! python3 "$REPO/scripts/hermes/market-check.py" 2>/dev/null; then
-  echo "📅 ${DATE_ISO} 주식 개장일이 아니어서 오늘 trading review는 진행하지 않았습니다."
-  exit 0
+#
+# market-check.py's contract is "exit 0 = trading day, exit 1 = not" — but an
+# uncaught Python exception also exits 1, indistinguishable from a clean skip by
+# code alone. On 2026-08-26 (an ordinary Wednesday, no NYSE holiday) this branch
+# fired and the whole review never ran; re-running market-check.py for the same
+# date afterward returned 0. So a crash was silently read as "market closed."
+# Capture stderr and only treat the skip as real when the script said so cleanly
+# — an error runs the review anyway, since guessing "closed" from a crash risks
+# losing a real trading day, while guessing "open" costs nothing but exchange
+# holidays already return no new close data on their own.
+MARKET_CHECK_ERR="$(mktemp)"
+python3 "$REPO/scripts/hermes/market-check.py" 2>"$MARKET_CHECK_ERR"
+MARKET_CHECK_RC=$?
+if [ "$MARKET_CHECK_RC" -ne 0 ]; then
+  if [ -s "$MARKET_CHECK_ERR" ]; then
+    echo "⚠️ ${DATE_ISO}: market-check.py errored (rc=$MARKET_CHECK_RC) instead of a clean trading-day answer — running the review anyway. $(head -c 300 "$MARKET_CHECK_ERR" | tr '\n' ' ')"
+  else
+    rm -f "$MARKET_CHECK_ERR"
+    echo "📅 ${DATE_ISO} 주식 개장일이 아니어서 오늘 trading review는 진행하지 않았습니다."
+    exit 0
+  fi
 fi
+rm -f "$MARKET_CHECK_ERR"
 
 [ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: runner not found at $RUNNER" >&2; exit 1; }
 
