@@ -48,6 +48,17 @@ export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 : "${TRADER_CLAUDE_MODEL:=claude-opus-4-8}"
 : "${TRADER_DIGEST_MODEL:=claude-sonnet-4-6}"
 
+# Same reason, one more variable. PROMPT_D interpolates $STOCK_DATA_DIR to tell
+# the model where the journal archive lives; every other dollar sign in that
+# prompt is escaped, so this one expands for real. Nothing sets it — not
+# _env.sh, not the profile .env — so under `set -u` the PROMPT_D *assignment*
+# aborted the whole script. On 2026-08-25 that killed the run between the merge
+# and the digest step: jobs A/B/C had finished and written real exit proposals
+# (an MSFT take-profit and an AAPL trim) to logs/reviews/, and none of it ever
+# reached Jack, because the step that formats and delivers it never started. The
+# run log ends mid-file with no error, since the abort also killed the logging.
+: "${STOCK_DATA_DIR:=$HOME/workspace/data/stock-management}"
+
 # A `claude -p` call that comes back 529 Overloaded has done no work and billed no
 # tokens — it is a capacity answer, not a verdict on the request. One such answer
 # used to end the phase for the day, so retry before giving up. Delays are indexed
