@@ -25,6 +25,24 @@ done
 export PATH="$PATH:/usr/bin:/bin"
 unset _d
 
+# $REPO comes from the profile .env, which outranks the default above. When the
+# checkout is renamed or moved and that value is not updated with it, every path
+# built from it points at nothing. Check the directory itself, not just the
+# runner: "the configured repo does not exist" names the one thing to fix, while
+# "runner not found" reads like a missing file inside a repo that is fine.
+#
+# 2026-08-25 the checkout was renamed to jackhpark-stock-trading-skills and
+# TRADING_AGENT_REPO kept pointing at the old name. From 08-26 the market-check
+# call above could not find its script, exited nonzero, and (stderr discarded
+# back then) was read as "not a trading day" — so the review silently did not run
+# and the Telegram message said the market was closed on an ordinary Wednesday.
+# Alert on stdout and exit 0: stdout is this script's delivery channel, so the
+# reason reaches Jack instead of becoming a bare "Cron failed" wrapper error.
+if [ ! -d "$REPO" ]; then
+  echo "⚠️ trading-review $DATE_ISO: configured repo does not exist at $REPO — review did not run. Set TRADING_AGENT_REPO in the trader profile .env to the current checkout path."
+  exit 0
+fi
+
 # Skip on non-NYSE trading days and notify so the skip is visible in Telegram.
 #
 # market-check.py's contract is "exit 0 = trading day, exit 1 = not" — but an
@@ -50,7 +68,7 @@ if [ "$MARKET_CHECK_RC" -ne 0 ]; then
 fi
 rm -f "$MARKET_CHECK_ERR"
 
-[ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: runner not found at $RUNNER" >&2; exit 1; }
+[ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: runner not found at $RUNNER — review did not run."; exit 0; }
 
 # Run the review+reconcile. It self-logs to logs/cron/<date>.run.log and emits no
 # stdout of its own; on weekends it skips and writes no digest.
