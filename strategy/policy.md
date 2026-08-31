@@ -129,6 +129,25 @@ let the user decide — the deterministic list stands as the default.
 
 Days to a few weeks (swing). Not intraday; not indefinite buy-and-hold.
 
+## One symbol, one direction per review
+
+A symbol may not be bought and sold in the same review. When a BUY signal and any
+exit signal (TRIM, take-profit, stop-loss) fire on the same symbol, **the exit wins
+and the BUY is dropped** — name it in the report as dropped, and why.
+
+This is not hypothetical: the thresholds overlap by construction. Entry fires at
+**≥5%** below the 20-day high and TRIM at **≥10%** below it, so every TRIM candidate
+is also a BUY candidate. On 2026-08-31 GOOGL sat at −11.75% and the review carried
+both, listing it as a blocked BUY and proposing the TRIM in the same message. Nothing
+resolved that; the $200 committed-add cap happened to block the buy. With the cap
+empty the review would have proposed buying $100 of GOOGL and selling $101.85 of it
+on the same morning, paying the spread twice to end roughly where it started.
+
+The exit wins rather than the entry because an exit reduces exposure and an add
+increases it: when the rules disagree about a name, the risk-reducing reading is the
+one to act on. `config/trim-policy.md` already settles exit-versus-exit the same way
+— most aggressive wins — and this is the same principle one level up.
+
 ## Prohibitions
 
 - No shorting (also unsupported by Robinhood).

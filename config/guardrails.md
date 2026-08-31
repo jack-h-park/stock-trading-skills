@@ -17,7 +17,25 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
   - within regular US session hours (notional/fractional reject outside regular hours)
   - symbol is an ultra-liquid universe name (tight spread) per `strategy/policy.md`
   - kill-switch not active
+  - **no exit signal on the same symbol in the same review** —
+    see "One symbol, one direction per review" in `strategy/policy.md`
+  - **the price the decision used is a settled close under 24h old, or a live quote.**
+    Prices are read from a table that is written by a scheduled refresh and re-checked
+    by nothing. On 2026-08-28 it held an intraday quote labelled as that day's close
+    (MSFT 509.71 against a settled 513.53), and on 2026-08-26 it held a figure frozen
+    three days by a refresh that kept failing. Both were visible only in hindsight.
+    Confirm-before-place tolerates a stale input because a person sees the number;
+    auto-place does not, so the freshness that was implicit becomes a precondition.
   - Sells, trims, and any exit are **always confirm** (never auto).
+
+> **Where this authorization does and does not reach.** It is written for the
+> interactive agent, which holds `place_equity_order`. The scheduled review
+> (`scripts/run-review.sh`) does not: its `--allowedTools` whitelist grants read
+> tools only, deliberately, so a cron job physically cannot trade. So the standing
+> authorization has never fired from the scheduled path — every proposal it produces
+> waits for Jack to open a session, including the ones that are wholly determined by
+> the rules above. That gap is the subject of `docs/decisions.md` §16; nothing here
+> grants the scheduled path anything.
 
 > **Why market, not limit:** Robinhood notional ($-amount) and fractional orders are only
 > accepted as `type=market` in regular hours; limit orders require a whole/known share

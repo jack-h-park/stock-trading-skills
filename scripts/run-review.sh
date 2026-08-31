@@ -212,6 +212,9 @@ Steps:
 3d. COMMITTED ADD CAPITAL — compute it per symbol before ranking anything, because the averaging-down rule in strategy/policy.md is stated as a running figure and not as a count. Read this account's full fill history for the symbol with mcp__robinhood__get_equity_orders, oldest first, and replay it: a buy adds its dollar amount, a sale multiplies the running figure by (1 − shares_sold / shares_held_before_the_sale) and the result is ROUNDED TO CENTS, a full exit zeroes it. The rounding is not cosmetic: fractional share counts do not divide evenly, and carried at full precision a 50% take-profit leaves \$100.00011766 committed and refuses the next \$100 add by a hundredth of a cent. State the result for every symbol you are about to rank or block, as 'committed \$X of \$200' — a blocked symbol must show the number that blocked it, the same way a drawdown is shown. If the fill history does not reach back to the position's opening the figure cannot be trusted: say so in Flags and treat the symbol as at the cap, which is the safe direction.
 4. Apply guardrails to BUY signals only (5 orders/day AND 6 orders/week max, \$100 each, 20% position cap — the table in config/guardrails.md is the source of truth if these ever disagree). The week runs Monday-Sunday; count this week's already-filled buys (including any REDISTRIBUTE buys) before ranking, and state the remaining weekly slots in the report. Build the prioritized BUY list per the 'Prioritization (deterministic)' section of policy.md. TRIM signals are not subject to the buy order cap — they are exits. Show the drawdown number for each ranked BUY. Qualitative context goes only in 'Flags', never changes the ranked list.
 4b. OBSERVATORY CONTEXT — read config/observatory-context.md and follow it. In short: read the summary file it names (\$STOCK_BRIEFING_SUMMARY_PATH, default ~/workspace/data/stock-management/outputs/stock-portfolio-observatory/briefing-summary.json); refuse it if schemaVersion > 1; keep ONLY items concerning a universe symbol or a symbol with an open Agentic position, at most 3; write them into the report's 'Flags' section as notes to Jack. If the file is missing, unreadable, or refused, write one line in Flags saying so and carry on — that is a normal state, not a failure. CRITICAL: these are whole-portfolio figures across every account and brokerage, denominated in KRW, and they already include the Agentic sleeve. Their percentages have a different denominator from the 20% Agentic position cap in config/guardrails.md — never compare them to it, and never let one satisfy or trigger a guardrail. This context must NOT change the ranked BUY list or its order, must NOT suppress or veto a signal, and must NOT be turned into a do-not-add rule.
+4c. DECISION RECORD — also write logs/reviews/${TODAY}.decisions.json, the same conclusions as machine-readable JSON. This is not a second analysis: emit the numbers you already computed above, or the file is worthless. Exact shape, no extra keys:
+{\"date\": \"${TODAY}\", \"targetSession\": \"<the next regular session these would execute in, YYYY-MM-DD>\", \"priceAsOf\": \"<the date of the closing prices you used, YYYY-MM-DD>\", \"decisions\": [{\"side\": \"buy|sell\", \"symbol\": \"SYM\", \"kind\": \"buy|trim|take-profit|stop-loss\", \"shares\": <number or null for notional buys>, \"notional\": <number>, \"priceUsed\": <number>, \"autoEligible\": <true|false>, \"reason\": \"<short>\"}], \"blocked\": [{\"symbol\": \"SYM\", \"rule\": \"<the rule that blocked it>\", \"value\": \"<the number behind it>\"}]}
+Set autoEligible true ONLY when every condition in the 'Standing authorization' list in config/guardrails.md holds for that order — in particular it is false for every sell, and false for a buy whose symbol also carries an exit signal. You are not placing anything; this file records what the rules determined so it can be checked afterwards against what actually happened.
 5. Write the report to logs/reviews/${TODAY}.md following the format in skills/log/SKILL.md (append a timestamped section if the file already exists). Include both BUY proposals and TRIM+REDISTRIBUTE proposals in separate sections. PROPOSALS ONLY. Do not add a portfolio-overview section here. Do not commit.
 
 ${CRITICAL_RO}"
@@ -295,6 +298,21 @@ run_job() { # $1=prompt  $2=jsonfile  $3=errfile  $4=label
   _run_with_retry "$1" "$2" "$3" "$4" read
 }
 
+# ── Shadow check: yesterday's decision record against what actually settled. ──
+# Runs BEFORE this session's review, not after it, and that ordering is the whole
+# trick. A record written at 13:30 names prices for a session whose settled closes
+# are not in the observatory database yet — the refresh that stores them runs later
+# — so checking it on the same day can only ever say "no settled row". By the next
+# review the closes have landed and the comparison is real.
+#
+# Reports; never gates. See docs/decisions.md#16.
+SHADOW_OUT="$REPO/logs/shadow/latest.txt"
+mkdir -p "$(dirname "$SHADOW_OUT")"
+"$PYTHON" "$HERE/shadow-check.py" --repo "$REPO" --quiet > "$SHADOW_OUT" 2>>"$RUNLOG" || true
+if [ -s "$SHADOW_OUT" ]; then
+  echo "----- shadow-check findings -----" >> "$RUNLOG"; cat "$SHADOW_OUT" >> "$RUNLOG"
+fi
+
 echo "----- launching parallel jobs A/B/C $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 run_job "$PROMPT_A" "$TMP_A_JSON" "$TMP_A_ERR" A & PID_A=$!
 run_job "$PROMPT_B" "$TMP_B_JSON" "$TMP_B_ERR" B & PID_B=$!
@@ -352,6 +370,7 @@ Steps:
    - Any take-profit or stop-loss exit, with the share count and estimated proceeds.
    - UNLOGGED TRADES, when and only when the reconcile step's '## Trade-log check' section reported findings. One short section headed 'Unlogged trades:' naming each fill (date, symbol, side, shares, price) and saying plainly that the fix is to write the missing entry in logs/trades/ per skills/log/SKILL.md, reconstructing why that order was placed — not to place or cancel anything. It belongs in this message because it is a thing Jack has to DO, and it decays: the reasoning is recoverable from the session it happened in and stops being recoverable soon after. When the check is clean, write nothing about it here — the one-line clean state goes in the reference message.
    - RECONCILE, when and only when the reconcile step found sheet drift. One short section headed 'Reconcile:' naming each alert, the account, and what to change in the holdings sheet. It sits here rather than in the reference message because it is the one other thing in this review that asks Jack to DO something, and that is what decides which channel a line goes to — not which account it concerns. Say plainly that fixing it means editing the sheet, not placing an order. When the sheet matches, write nothing about reconcile at all: 'no drift' is the expected state and belongs in the read-only message.
+   - SHADOW CHECK, when and only when logs/shadow/latest.txt is non-empty. One short section headed 'Shadow check:' carrying what it says. That file is only written when a decision this review made yesterday disagrees with what the market settled at, which means the price a rule acted on was not the price — the fault class that confirm-before-place hides because a person reads the number. It belongs in this message because it is evidence about whether these proposals can ever be trusted to place themselves.
    - End with the reminder that these are proposals only and nothing executes until Jack confirms in the interactive session.
 
 3b. REFERENCE — write logs/digest/${TODAY}.md (overwrite if it exists), <= 1600 characters. Everything Jack CANNOT execute from the Agentic account. Open by saying plainly that this message is read-only context.
