@@ -1,0 +1,11 @@
+{
+  "_comment": "Rulings Jack has given on questions the rules do not determine. Read by the scheduled review before it asks; written by the interactive agent when a ruling is given. See strategy/policy.md, 'One symbol, one direction per review'. A key answered here is applied silently and named in the report, never re-asked. Three identical answers across different symbols means the rule should be written into policy and the entries retired — this is a waiting room, not a home.",
+  "_schema": {
+    "<key>": {
+      "ruling": "<what to do>",
+      "ruledOn": "YYYY-MM-DD",
+      "reason": "<one line, in Jack's words where possible>"
+    }
+  },
+  "rulings": {}
+}

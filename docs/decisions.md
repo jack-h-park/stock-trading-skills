@@ -228,6 +228,23 @@ confirm-before-place had been covering silently:
   Only the committed-add cap kept it from proposing a buy and a sell of the same name
   on the same morning. A person reading that would have noticed; a rule executing it
   would not.
+
+  The first draft of this entry resolved it with a default — the exit wins, because it
+  reduces exposure. That reads as principled and is still probably the right answer,
+  but it is a trading decision wearing a tie-break's clothes, and the rules genuinely
+  do not determine it: the entry rule sees a name worth adding to, the exit rule sees
+  one worth cutting, and both are working correctly. **So the review asks instead.**
+  Neither side is auto-eligible until Jack rules; the ruling is stored in
+  `config/rulings.json`, applied silently thereafter, and never asked twice — the
+  fractional-sell question was asked on two consecutive days in July for want of
+  exactly that, and its answer became a rule in `config/trim-policy.md`. Three
+  identical answers across different symbols means the rule should be written into
+  policy and the entries retired: the store is a waiting room, not a home.
+
+  This is the shape the whole plan turns on. Automating what the rules determine only
+  pays if the cases they do not determine are visibly escalated rather than quietly
+  resolved — otherwise autonomy is bought by making judgement calls invisible, which
+  is the opposite of the trade being made here.
 - **Price freshness.** Prices come from a table written by a scheduled refresh and
   re-checked by nothing. Within one week it held a three-day-frozen figure (a refresh
   failing at `extract:fx-ledger`) and an intraday quote labelled as a settled close

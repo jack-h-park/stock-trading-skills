@@ -132,21 +132,58 @@ Days to a few weeks (swing). Not intraday; not indefinite buy-and-hold.
 ## One symbol, one direction per review
 
 A symbol may not be bought and sold in the same review. When a BUY signal and any
-exit signal (TRIM, take-profit, stop-loss) fire on the same symbol, **the exit wins
-and the BUY is dropped** — name it in the report as dropped, and why.
+exit signal (TRIM, take-profit, stop-loss) fire on the same symbol, **neither side
+is acted on automatically. The review asks for a ruling.**
 
-This is not hypothetical: the thresholds overlap by construction. Entry fires at
-**≥5%** below the 20-day high and TRIM at **≥10%** below it, so every TRIM candidate
-is also a BUY candidate. On 2026-08-31 GOOGL sat at −11.75% and the review carried
-both, listing it as a blocked BUY and proposing the TRIM in the same message. Nothing
-resolved that; the $200 committed-add cap happened to block the buy. With the cap
-empty the review would have proposed buying $100 of GOOGL and selling $101.85 of it
-on the same morning, paying the spread twice to end roughly where it started.
+The thresholds overlap by construction: entry fires at **≥5%** below the 20-day
+high and TRIM at **≥10%** below it, so every TRIM candidate is also a BUY
+candidate. On 2026-08-31 GOOGL sat at −11.75% and the review carried both readings
+in one message — listed as a blocked BUY, proposed as a TRIM. Nothing resolved
+that; the $200 committed-add cap happened to block the buy. With the cap empty the
+review would have proposed buying $100 of GOOGL and selling $101.85 of it on the
+same morning.
 
-The exit wins rather than the entry because an exit reduces exposure and an add
-increases it: when the rules disagree about a name, the risk-reducing reading is the
-one to act on. `config/trim-policy.md` already settles exit-versus-exit the same way
-— most aggressive wins — and this is the same principle one level up.
+**Why a ruling rather than a default.** Picking one — say, the exit, because it
+reduces exposure — reads as principled and would have settled this in a line. But
+it is a trading decision dressed as a tie-break, and the rules genuinely do not
+determine it: the entry rule sees a name worth adding to, the exit rule sees a
+name worth cutting, and both are working as designed. The system should say so
+rather than resolve it quietly and be right by accident. This is also the one
+place in a review where a human answer carries information the rules do not
+already contain, which is exactly where the attention belongs.
+
+There is precedent: the 2026-07-28 and 07-29 reviews both proposed a fractional
+sell and asked for a ruling, and the answer became the `Trim size` rule in
+`config/trim-policy.md`. What follows is that, made repeatable.
+
+### How a ruling is asked for, and why only once
+
+**Asking every session is worse than guessing.** The fractional-sell question was
+asked on two consecutive days before it was settled, and a conflict that persists
+— GOOGL can sit below its 20-day high for weeks — would otherwise produce the same
+request every afternoon until it resolves itself, which is how a channel stops
+being read.
+
+So a ruling is keyed, stored and reused:
+
+- **Key:** `<symbol>:<buy-vs-exit>`. The review looks in `config/rulings.json`
+  before asking. A key already answered is applied silently and named in the
+  report, not re-asked.
+- **Asked once**, in the Agentic message, under its own heading, stating both
+  readings and their numbers. Jack answers in the interactive session; the agent
+  writes the ruling to the store with its date and a one-line reason.
+- **Until it is answered, nothing on that symbol executes automatically** — it is
+  not auto-eligible under `config/guardrails.md`, on either side. Both readings
+  still appear in the report, so a manual decision is always available.
+
+### When a ruling should stop being a ruling
+
+If the same conflict is answered the same way **three times across different
+symbols**, the review says so and proposes the wording for a policy rule instead
+of asking a fourth time. A question that always gets the same answer is a rule
+nobody has written down yet, and the store is a waiting room, not a home. Rulings
+that graduate move into this file or `config/trim-policy.md`; the store keeps only
+what is still genuinely open.
 
 ## Prohibitions
 

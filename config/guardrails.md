@@ -17,7 +17,9 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
   - within regular US session hours (notional/fractional reject outside regular hours)
   - symbol is an ultra-liquid universe name (tight spread) per `strategy/policy.md`
   - kill-switch not active
-  - **no exit signal on the same symbol in the same review** —
+  - **no unresolved buy-vs-exit conflict on the symbol.** When both fire, neither
+    side is auto-eligible until Jack has ruled, and the ruling is stored in
+    `config/rulings.json` so it is asked once rather than every session —
     see "One symbol, one direction per review" in `strategy/policy.md`
   - **the price the decision used is a settled close under 24h old, or a live quote.**
     Prices are read from a table that is written by a scheduled refresh and re-checked
