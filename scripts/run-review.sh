@@ -127,13 +127,32 @@ if [ -z "$ROBINHOOD_TOKEN" ]; then
 fi
 GCP_SA_KEY="$HOME/.config/stock-portfolio-briefing/gcp-sheets-sa.json"
 SHEETS_MCP_SCRIPT="$REPO/scripts/mcp-google-sheets.py"
+
+# The holdings sheet's fileId. accounts.local.md is gitignored (this repo is
+# public), so it is the only place the real value exists; the MCP server used to
+# carry the literal "<US_HOLDINGS_SHEET_ID>" placeholder and 404 on every call.
+# The reconcile then reported "could not run" on four consecutive review days —
+# 2026-08-24, 08-25, 08-28, 08-31 — while looking like a Google permissions
+# problem. The other placeholders are resolved by the agent reading that file, as
+# it instructs; a server process cannot do that, so it is passed in here.
+#
+# Missing is not fatal: the reconcile is one part of the review, and losing the
+# whole run over it would be a worse trade. read_holdings names the fault instead.
+ACCOUNTS_LOCAL="$REPO/config/accounts.local.md"
+HOLDINGS_SHEET_ID="$(
+  grep -F '<US_HOLDINGS_SHEET_ID>' "$ACCOUNTS_LOCAL" 2>/dev/null |
+    awk -F'|' 'NF>=3 {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit}'
+)"
+if [ -z "$HOLDINGS_SHEET_ID" ]; then
+  echo "WARNING: <US_HOLDINGS_SHEET_ID> not found in $ACCOUNTS_LOCAL — sheet reconcile will report it" >> "$RUNLOG"
+fi
 # The Google Sheets MCP requires the Hermes venv Python (has mcp + google-auth installed).
 # Fall back to system python3 for local dev runs where the venv isn't present.
 HERMES_VENV_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python"
 [ -x "$HERMES_VENV_PYTHON" ] || HERMES_VENV_PYTHON="$PYTHON"
-"$PYTHON" - "$MCP_CONFIG_FILE" "$ROBINHOOD_TOKEN" "$HERMES_VENV_PYTHON" "$SHEETS_MCP_SCRIPT" "$GCP_SA_KEY" << 'PYEOF'
+"$PYTHON" - "$MCP_CONFIG_FILE" "$ROBINHOOD_TOKEN" "$HERMES_VENV_PYTHON" "$SHEETS_MCP_SCRIPT" "$GCP_SA_KEY" "$HOLDINGS_SHEET_ID" << 'PYEOF'
 import json, sys
-out, token, py, script, sa = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+out, token, py, script, sa, sheet_id = sys.argv[1:7]
 cfg = {
     "mcpServers": {
         "robinhood": {
@@ -144,7 +163,7 @@ cfg = {
         "google-drive": {
             "command": py,
             "args": [script],
-            "env": {"GOOGLE_APPLICATION_CREDENTIALS": sa}
+            "env": {"GOOGLE_APPLICATION_CREDENTIALS": sa, "HOLDINGS_SHEET_ID": sheet_id}
         }
     }
 }
