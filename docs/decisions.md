@@ -258,3 +258,36 @@ the envelope needed stating before anything is switched on.
 live-money change and Jack's to make. The next step is to run the decision offline —
 compute what would have been placed, then check the following session whether it still
 held — so the question is answered from a record rather than an argument.
+## 17. Robinhood MCP error-log triage (2026-08-31)
+
+Four recurring error shapes in the trader profile's `gateway.error.log` were flagged
+while fixing the PR #595 path-rename bug and investigated separately, since none of
+them were that bug. Findings, so a future sighting isn't re-diagnosed from scratch:
+
+- **Keepalive timeouts** (`MCP server 'robinhood' keepalive failed ... Errno 60
+  Operation timed out`) — ongoing, ~2/day across the log's 13 timestamped days, plus
+  more in its untimestamped backlog. Every sampled occurrence lines up with a
+  simultaneous Telegram connection failure in the same log window — two unrelated
+  external services failing together points to local network flakiness on the iMac,
+  not `agent.robinhood.com` being slow or down. Each failure self-heals via reconnect.
+  Not currently actionable; not investigated further.
+- **"We're required to have you answer some questions about your investing goals..."**
+  (`place_equity_order`, 2 occurrences) and **`FORBIDDEN: agent not authorized to
+  access this account`** (`review_equity_order`, 2 occurrences). Both are confined to
+  the log's untimestamped section, which predates the file's 2026-08-18 17:31
+  timestamp cutover — i.e. both happened during the Agentic account's first week (the
+  token store was created 2026-08-12). Zero recurrences since; real trades filled
+  successfully starting 2026-08-25 (AMZN/NVDA/MSFT — see `logs/trades/2026-08-25.md`).
+  The FORBIDDEN errors plausibly trace to the unlocked, non-atomic token-file writes
+  documented in `scripts/robinhood_token.py`'s module docstring, fixed by #31
+  (`55dd713`, merged 2026-08-19) — two racing writers could leave a torn or stale
+  access token in place. The investing-goals block reads as a one-time Robinhood
+  onboarding gate on the newly created account, since cleared on Robinhood's side.
+- **resource name `"flatline:server-combined.flatline.region.rh:443"` of type
+  Cluster not found** (gRPC authorization-check error, 1 occurrence, in the same
+  untimestamped/early window as the two above). Reads as a Robinhood-side backend
+  service-discovery hiccup — outside anything our proxy or token logic touches.
+  Never repeated.
+
+None of the four blocked a real trading-review run at any point the log or cron
+history covers. No code change made here.
