@@ -378,7 +378,7 @@ PROMPT_D="You are writing the notification digest and committing the scheduled p
 Steps:
 1. Read logs/reviews/${TODAY}.md (contains the Agentic BUY/TRIM proposals and a 'Full Portfolio Overview' section) and logs/reconcile/${TODAY}.md (the reconcile drift report). If either file is missing, note it but continue with what exists.
 2. BRIEFING CONTEXT: read ~/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json (if it exists). Extract the macro, moverNotes, and actions fields. Keep at most 2 observations directly relevant to the universe symbols or current open positions. If the file does not exist, skip silently.
-2b. ACT-NOW OVERRIDE: each action carries a \"priority\" of act-now, this-week, or fyi. An action whose priority is \"act-now\" is ALWAYS carried into the digest, in addition to the 2 relevance-picked observations and regardless of whether its symbol is in the Agentic universe — the briefing allows at most one per day and zero is the normal case, so it is the one item the writer marked as decidable today. Lead the briefing note with it, keep its deadline, and say plainly if it concerns a holding outside the Agentic account so Jack knows it is not actionable by this sleeve. Never restate an act-now as a proposal or a guardrail input: it is context for Jack, and it must not change the ranked BUY list.
+2b. ACT-NOW OVERRIDE: each action carries a \"priority\" of act-now, this-week, or fyi. An action whose priority is \"act-now\" is ALWAYS carried into the digest, in addition to the 2 relevance-picked observations and regardless of whether its symbol is in the Agentic universe — the briefing allows at most one per day and zero is the normal case, so it is the one item the writer marked as decidable today. Lead the briefing note with it, and say plainly if it concerns a holding outside the Agentic account so Jack knows it is not actionable by this sleeve. CARRY ITS DEADLINE ONLY IF THAT DEADLINE IS STILL IN THE FUTURE WHEN YOU WRITE THIS. The briefing publishes at 08:00 PT, mid-session; this review runs post-close, so an act-now deadline the briefing wrote as \"before the close\", \"before the bell\" or \"today\" has already expired by the time you repeat it, and repeating it verbatim asks Jack to do something he can no longer do. On 2026-09-01 the PANW item went out at 13:41 PT saying \"decide before the bell\" — 41 minutes after the 13:00 bell, on a session the stock fell 5.2% during. Check the deadline against the current time and rewrite it: if the window is still open say so plainly, if the next chance is the following session say that, and if the catalyst has already happened say THAT and drop the instruction entirely rather than dressing a closed decision as an open one. This is the same arithmetic the slots line below already does — a deadline nobody can meet is the sibling of a budget nobody can spend. Never restate an act-now as a proposal or a guardrail input: it is context for Jack, and it must not change the ranked BUY list.
 3. TWO DIGESTS, split by what Jack can act on. They go to different channels, so nothing may appear in both — a fact belongs to exactly one file. Conversational tone in each; warm but concise, no markdown tables, no robotic headers. Neither file is committed.
 
 3a. ACTIONABLE — write logs/digest/${TODAY}.agentic.md (overwrite if it exists), <= 1600 characters. ONLY the Robinhood Agentic account (<AGENTIC_ACCOUNT>), the one account whose proposals Jack can execute. Nothing from any other account belongs here.
@@ -412,6 +412,15 @@ rm -f "$REPO/logs/digest/${TODAY}.agentic.md"
 echo "----- digest+commit step $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 _run_with_retry "$PROMPT_D" "$TMP_D_JSON" "$TMP_D_ERR" D digest
 RC_D=$?
+# Did the deadline rewrite in PROMPT_D actually hold? Checked against the message
+# that was written, not against the instruction that asked for it — this is the
+# second fix for the same fault (flagged 2026-08-31, delivered again 09-01), and a
+# prompt rule cannot report on itself. Never gates: a message with a stale deadline
+# is still worth sending, what must not happen is nobody noticing it went out.
+"$PYTHON" "$HERE/check-digest-deadlines.py" \
+  "$REPO/logs/digest/${TODAY}.agentic.md" "$REPO/logs/digest/${TODAY}.md" \
+  >> "$RUNLOG" 2>&1 || true
+
 echo "----- digest stderr -----" >> "$RUNLOG"; cat "$TMP_D_ERR" >> "$RUNLOG" 2>/dev/null
 echo "----- digest result json -----" >> "$RUNLOG"; cat "$TMP_D_JSON" >> "$RUNLOG" 2>/dev/null
 _log_trader_usage "trading-review" "$(cat "$TMP_D_JSON" 2>/dev/null)"
