@@ -195,3 +195,66 @@ expected to diverge, so reconciling it would manufacture permanent noise. But th
 "Agentic is out of scope for this reconcile" was doing more work than it should: the one
 account this repo trades was reading as the one account nothing checked. It now says which
 reconcile it is out of scope for, and names the trade-log check that covers it.
+## 16. The approval bottleneck is a missing execution path, not a missing permission
+
+**2026-08-31.** Every proposal the scheduled review produces waits for Jack to open an
+interactive session, including the ones no human judgement went into. Asked to reduce
+that friction, the obvious answer was to write a narrow standing authorization.
+
+It already exists. `config/guardrails.md` has carried one since the guardrails were
+written: a `buy`, in the universe, ≤ $100 notional, inside the daily and weekly counts,
+notional market order, regular hours, ultra-liquid, kill-switch clear — placeable with
+no per-order confirmation. Sells and every exit are always confirm. That is close to
+exactly the envelope anyone would design today.
+
+**What is missing is a path, not a permission.** The authorization is written for the
+interactive agent, which holds `place_equity_order`. The scheduled review does not:
+`scripts/run-review.sh` grants read tools only, on purpose, so that a cron job cannot
+trade. So the standing authorization has never fired from the scheduled path, and the
+review that computes a fully determined $100 buy at 13:30 has no way to act on it.
+
+Recording this because the fix that suggests itself — "write an auto-execute policy" —
+would have added a second, overlapping envelope and left the actual gap untouched. The
+question to answer is narrower: should the scheduled path be given the order tool under
+the authorization that already governs the interactive one, and what has to be true of
+the data before it is.
+
+Two preconditions were added to that authorization here, both of which
+confirm-before-place had been covering silently:
+
+- **One symbol, one direction** (`strategy/policy.md`). Entry fires at ≥5% below the
+  20-day high and TRIM at ≥10%, so every TRIM candidate is also a BUY candidate. On
+  2026-08-31 GOOGL sat at −11.75% and the review carried both readings in one message.
+  Only the committed-add cap kept it from proposing a buy and a sell of the same name
+  on the same morning. A person reading that would have noticed; a rule executing it
+  would not.
+
+  The first draft of this entry resolved it with a default — the exit wins, because it
+  reduces exposure. That reads as principled and is still probably the right answer,
+  but it is a trading decision wearing a tie-break's clothes, and the rules genuinely
+  do not determine it: the entry rule sees a name worth adding to, the exit rule sees
+  one worth cutting, and both are working correctly. **So the review asks instead.**
+  Neither side is auto-eligible until Jack rules; the ruling is stored in
+  `config/rulings.json`, applied silently thereafter, and never asked twice — the
+  fractional-sell question was asked on two consecutive days in July for want of
+  exactly that, and its answer became a rule in `config/trim-policy.md`. Three
+  identical answers across different symbols means the rule should be written into
+  policy and the entries retired: the store is a waiting room, not a home.
+
+  This is the shape the whole plan turns on. Automating what the rules determine only
+  pays if the cases they do not determine are visibly escalated rather than quietly
+  resolved — otherwise autonomy is bought by making judgement calls invisible, which
+  is the opposite of the trade being made here.
+- **Price freshness.** Prices come from a table written by a scheduled refresh and
+  re-checked by nothing. Within one week it held a three-day-frozen figure (a refresh
+  failing at `extract:fx-ledger`) and an intraday quote labelled as a settled close
+  (MSFT 509.71 against 513.53). Both were visible only afterwards. A person sees the
+  number before approving; an automated placement does not.
+
+Both are fixed as of this entry, and neither is a reason to wait — they are the reason
+the envelope needed stating before anything is switched on.
+
+**Not decided here:** whether the scheduled path gets the order tool at all. That is a
+live-money change and Jack's to make. The next step is to run the decision offline —
+compute what would have been placed, then check the following session whether it still
+held — so the question is answered from a record rather than an argument.
