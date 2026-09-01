@@ -8,6 +8,10 @@ write to the sheet (manual updates only, by decision).
 
 - Title: `미국 주식 보유 현황 및 수익률`
 - Google Drive fileId: `<US_HOLDINGS_SHEET_ID>`
+- Tab: **`미실현수익 정리 (자동)`** — the one the observatory's `publish:us-sheet`
+  step rewrites each refresh. The workbook's FIRST tab is `[양식] 미실현수익 정리`,
+  a blank form, so a range with no tab name reads two rows of `#DIV/0!` and
+  `#N/A` and looks like a sheet with no positions in it.
 - Read via the Google Drive MCP (`read_file_content`). Read-only.
 
 ## Account mapping (sheet section → Robinhood account)

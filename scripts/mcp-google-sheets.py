@@ -63,8 +63,31 @@ async def _read_range_async(spreadsheet_id: str, range_: str) -> list[list[Any]]
 
 
 # Holdings sheet config — matches config/holdings-sheet.md
-HOLDINGS_SHEET_ID = "<US_HOLDINGS_SHEET_ID>"
-HOLDINGS_DEFAULT_RANGE = "A:Z"
+#
+# The real fileId lives in config/accounts.local.md, which is gitignored because
+# this repo is public. This file is not, so it can only carry the placeholder —
+# and it carried it as a literal string, which is what read_holdings then asked
+# Google for. Every call 404'd, and the sheet reconcile reported "could not run"
+# on 2026-08-24, 08-25, 08-28 and 08-31 without anyone reading it as a config
+# fault. Injected by scripts/run-review.sh at launch instead.
+#
+# Agent-facing placeholders elsewhere are resolved by the agent reading
+# accounts.local.md, as that file instructs. An MCP server is a process, not an
+# agent: it cannot read and resolve, so it has to be told.
+HOLDINGS_SHEET_ID = os.environ.get("HOLDINGS_SHEET_ID", "").strip()
+
+# Name the tab. A bare "A:Z" reads whichever tab is FIRST, and on this workbook
+# that is "[양식] 미실현수익 정리" — a two-row blank form whose only populated
+# cells are #DIV/0! and #N/A. The 86 real positions, Chase and Fidelity and
+# Merrill among them, sit in the second tab, which the observatory's
+# publish:us-sheet step rewrites on every refresh.
+#
+# So the reconcile was not merely blocked by the 404 above: once that was fixed
+# it would have read the empty form and reported, with conviction, that the
+# sheet has no positions. Both faults had to go for it to see anything, and the
+# second is the one that would have survived looking fixed.
+HOLDINGS_TAB = os.environ.get("HOLDINGS_TAB", "미실현수익 정리 (자동)").strip()
+HOLDINGS_DEFAULT_RANGE = f"'{HOLDINGS_TAB}'!A:Z" if HOLDINGS_TAB else "A:Z"
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
@@ -99,6 +122,16 @@ async def read_sheet(spreadsheet_id: str, range: str = "A:Z") -> str:
 )
 async def read_holdings() -> str:
     """Read the whole holdings sheet."""
+    # Say which knob is unset rather than returning Google's 404. The 404 is what
+    # made this look like a permissions or sharing problem for four review days.
+    if not HOLDINGS_SHEET_ID or HOLDINGS_SHEET_ID.startswith("<"):
+        return (
+            "Error: HOLDINGS_SHEET_ID is not configured for this server "
+            "(got %r). It is injected by scripts/run-review.sh from the "
+            "<US_HOLDINGS_SHEET_ID> row of config/accounts.local.md; the sheet "
+            "itself is fine. Report this as a configuration fault, and do not "
+            "retry with a guessed id." % (HOLDINGS_SHEET_ID or None,)
+        )
     try:
         rows = await _read_range_async(HOLDINGS_SHEET_ID, HOLDINGS_DEFAULT_RANGE)
         return json.dumps(rows, ensure_ascii=False)
