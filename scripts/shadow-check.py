@@ -140,16 +140,28 @@ def main():
             "targetSession": record.get("targetSession"),
             "priceAsOf": record.get("priceAsOf"),
             "autoEligibleCount": len(auto),
+            # Carried so the ledger can answer "which threshold keeps being read
+            # past, in which direction, and why" from a record instead of from
+            # memory. A threshold departed from repeatedly and consistently is set
+            # to the wrong number; one never departed from is working.
+            "departures": record.get("departures") or [],
             "autoEligible": [{"side": d.get("side"), "symbol": d.get("symbol"),
                               "notional": d.get("notional")} for d in auto],
             "findings": findings,
         }, ensure_ascii=False) + "\n")
 
+    # Departures are recorded, not alarmed on: they are the expected output of a
+    # judgement call, and printing them every session would bury the price
+    # mismatches this check exists for. Read them from the ledger.
     if args.quiet and not bad:
         return 0
 
-    print("shadow-check %s (would execute %s): %d auto-eligible, %d checked" % (
-        record.get("date"), record.get("targetSession"), len(auto), len(findings)))
+    departures = record.get("departures") or []
+    print("shadow-check %s (would execute %s): %d auto-eligible, %d checked, %d departure(s)" % (
+        record.get("date"), record.get("targetSession"), len(auto), len(findings), len(departures)))
+    for d in departures:
+        print("  read past: %s %s (%s) -> %s — %s" % (
+            d.get("symbol"), d.get("threshold"), d.get("observed"), d.get("did"), d.get("why", "")))
     for d in auto:
         print("  would place: %s %s $%s — %s" % (
             d.get("side"), d.get("symbol"), d.get("notional"), d.get("reason", "")))
