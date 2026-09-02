@@ -38,10 +38,27 @@ DEFAULT_DB = Path.home() / (
     "workspace/data/stock-management/outputs/stock-portfolio-observatory"
     "/stock-portfolio-observatory.db"
 )
-# A cent of drift is rounding between two vendors; a dollar is a different number.
-# The 2026-08-28 case was $3.82 out, so this is set well below the fault it exists
-# to catch and well above float noise.
-TOLERANCE = 0.02
+# What counts as the same price.
+#
+# The review prices from the broker's last regular trade; this table stores the
+# consolidated settled close. Those are two definitions of "the close" and they
+# differ by a few cents as a matter of course — MSFT on 2026-09-01 was 501.15
+# against 501.02, and a flat $0.02 tolerance called that a mismatch. Left alone it
+# would have put a finding in the ledger nearly every day, and a check that cries
+# wolf is one nobody reads, which is the failure this whole line of work keeps
+# hitting.
+#
+# Relative, because the gap scales with price. 0.15% clears the vendor difference
+# (0.026% on that MSFT pair) by roughly six times, and the fault this exists to
+# catch — the 08-28 intraday quote stored as a close — was 0.74% out, roughly five
+# times the other way. The absolute floor keeps a cheap symbol from tripping on
+# rounding alone.
+TOLERANCE_PCT = 0.0015
+TOLERANCE_MIN = 0.05
+
+
+def tolerance_for(price):
+    return max(TOLERANCE_MIN, abs(float(price)) * TOLERANCE_PCT)
 
 
 def settled_close(db_path, symbol, price_date):
@@ -79,7 +96,7 @@ def check(record, db_path):
         delta = float(used) - actual
         findings.append({
             "symbol": symbol,
-            "verdict": "ok" if abs(delta) <= TOLERANCE else "price-mismatch",
+            "verdict": "ok" if abs(delta) <= tolerance_for(actual) else "price-mismatch",
             "priceUsed": float(used), "settledClose": actual, "delta": round(delta, 4),
             "autoEligible": bool(d.get("autoEligible")),
         })
