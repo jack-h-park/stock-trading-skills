@@ -178,6 +178,9 @@ cat logs/cron/$(date +%F).run.log     # what it did
 None of this is investment advice, and none of it removes the account owner's
 responsibility for what the agent does.
 
+Maintained as the author's own trading setup, not as a supported project — expect
+no response SLA on issues or PRs. Fork it and diverge rather than waiting.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
