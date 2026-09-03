@@ -291,3 +291,57 @@ them were that bug. Findings, so a future sighting isn't re-diagnosed from scrat
 
 None of the four blocked a real trading-review run at any point the log or cron
 history covers. No code change made here.
+
+## 17. Thresholds are defaults a departure may read past, not rules to keep adding to
+
+**2026-09-02.** §16 escalated what the rules could not determine, and the first
+thing it escalated was a buy-vs-exit conflict on GOOGL. Jack's reply was the
+useful part: *do I really have to set every one of these deterministically?*
+
+He was right, and the pattern is visible in the record. Entry fires at ≥5% below
+the 20-day high and TRIM at ≥10% below the same high, so the two must collide —
+and every fix on offer was another number. The number proposed to settle it was
+30%. Working it out afterwards: with TRIM at 30%, the −8% stop-loss from average
+cost fires first on **all six** open positions, by 5 to 18% of price, so 30% would
+have quietly retired TRIM for every single name in the universe and left it live
+only for the two ETFs, which have no stop. Nobody saw that from the number. It
+took arithmetic done after the fact.
+
+A number is also a lossy container. What Jack actually said was that he reads a
+drawdown as an opportunity — a stance that generalises. "30%" is that stance
+encoded so it happens to be right for GOOGL and wrong for VOO.
+
+**So the thresholds become defaults.** The review may read past one when the
+situation says otherwise, provided it names the threshold, the number, what it did
+instead, and why. Every departure is recorded in the decision record and carried
+into the shadow ledger.
+
+Three things keep this from being a licence:
+
+- **The guardrails are not departable.** Order notional, the daily and weekly
+  counts, the position cap, the committed-add cap, the kill switch, regular hours,
+  the universe. Those bound how wrong a judgement can be; a judgement that can
+  widen its own bounds is not bounded. A departure needing one of them to move is
+  a proposal to change the guardrail, and goes to Jack as that.
+- **A departed item is never auto-eligible.** The standing authorization covers
+  what the rules fully determine. A departure is by definition not that.
+- **Departures do not accumulate into permission.** Ten on TRIM do not make the
+  eleventh automatic. They make the case for editing the number, which Jack does.
+
+**What is given up, stated plainly:** `shadow-check.py` can verify that the price
+a decision used was real. It cannot verify that reasoning was sound. Moving the
+signal layer from arithmetic to judgement gives up a kind of checkability, and the
+mitigation — every departure carries its reasoning, and the ledger accumulates
+them — is weaker than re-deriving a number. It is a real trade and it was made
+knowingly.
+
+The bet is that the ledger answers the question the thresholds could not: which
+number is wrong, in which direction, how often. A threshold departed from
+repeatedly and consistently is set wrong; one never departed from is working.
+That is a better instrument than another round of picking numbers, and it is
+reversible — the thresholds are still there, and the departures are all on record.
+
+§16's ruling mechanism survives for what it was actually for: situations the rules
+cannot anticipate and the agent should not decide alone — a pending acquisition, a
+halt, an earnings gap that makes the 20-day high meaningless. A threshold overlap
+was never one of those.

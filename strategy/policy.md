@@ -132,8 +132,23 @@ Days to a few weeks (swing). Not intraday; not indefinite buy-and-hold.
 ## One symbol, one direction per review
 
 A symbol may not be bought and sold in the same review. When a BUY signal and any
-exit signal (TRIM, take-profit, stop-loss) fire on the same symbol, **neither side
-is acted on automatically. The review asks for a ruling.**
+exit signal (TRIM, take-profit, stop-loss) fire on the same symbol, **the review
+reads the situation, acts on one side, and records the other as a departure** —
+naming which threshold it read past and why, per "Departing from a threshold"
+below. The item is not auto-eligible either way.
+
+This started out as a question for Jack, keyed per symbol and stored in
+`config/rulings.json`. That was the wrong shape and it was wrong for a reason
+worth keeping: the overlap is not a fact about GOOGL, it is a fact about the
+thresholds, so asking per symbol asks the same question once per universe name
+and gets eight answers to one question. Worse, each answer wants to be a number,
+and the numbers interact — raising TRIM to 30% to settle it would have killed TRIM
+for every single name, because the −8% stop-loss reaches first on all of them.
+
+Ruling still applies where the rules genuinely cannot anticipate the situation and
+the agent should not decide alone: a pending acquisition, a halt, an earnings gap
+that makes the 20-day high meaningless. Those are per-instance and stay in
+`config/rulings.json`. A threshold overlap is not one of them.
 
 The thresholds overlap by construction: entry fires at **≥5%** below the 20-day
 high and TRIM at **≥10%** below it, so every TRIM candidate is also a BUY
@@ -184,6 +199,60 @@ of asking a fourth time. A question that always gets the same answer is a rule
 nobody has written down yet, and the store is a waiting room, not a home. Rulings
 that graduate move into this file or `config/trim-policy.md`; the store keeps only
 what is still genuinely open.
+
+## Departing from a threshold
+
+Every number in this file is a **default, not a boundary** — except the hard
+limits in `config/guardrails.md`, which are neither and cannot be departed from at
+all. The review may read a situation differently from what a threshold says, and
+place the item accordingly, **provided it says which threshold it is departing
+from, what the number was, and why.** Every departure is recorded.
+
+**Why defaults rather than fixed rules.** The thresholds have to disagree with
+each other eventually, because they measure the same thing for opposite purposes:
+entry fires at ≥5% below the 20-day high, TRIM at ≥10% below the same high. Each
+time that surfaced, the fix on offer was another number — and the numbers interact
+in ways nobody sees until an incident. Raising TRIM to 30% was reasonable on its
+face and would have made TRIM dead for every single name in the universe, because
+the −8% stop-loss from average cost fires first on all of them, by 5 to 18% of
+price. Nobody predicted that; it took working the arithmetic out afterwards.
+
+A number is also a poor container for the intent behind it. "In a market-wide
+drawdown, a conviction name still near cost reads as an entry" is the actual
+position; 30% is a lossy encoding of it that happens to be right for one symbol
+and wrong for the ETFs.
+
+### What a departure may and may not touch
+
+**May** — the interpretation of a signal: whether a drawdown is an entry or an
+exit, whether a take-profit fires now or waits, how a name ranks.
+
+**May not** — anything in `config/guardrails.md`: order notional, orders per day
+and week, the position cap, the committed-add cap, the kill switch, regular hours,
+the universe. Those are not opinions about the market; they bound how wrong a
+judgement can be, and a judgement that can widen its own bounds is not bounded.
+A departure that would need one of them to move is not a departure — it is a
+proposal to change the guardrail, and it goes to Jack as that.
+
+### What a departure costs
+
+A departed item is **never auto-eligible.** The standing authorization in
+`config/guardrails.md` covers what the rules fully determine; a departure is by
+definition not that, so it goes to Jack with its reasoning to read. Autonomy is
+bought by rules being right, not by judgement being unexamined.
+
+### The record is the point
+
+Each departure is written to the day's `logs/reviews/<date>.decisions.json` under
+`departures`, and carried into the shadow ledger. That is the whole mechanism for
+learning which numbers are wrong: a threshold departed from repeatedly, in the
+same direction, for the same reason, is a threshold set to the wrong value — and
+the ledger will say so with dates and instances rather than from argument. A
+threshold never departed from is one that is working.
+
+Departures do not accumulate into permission. Ten departures on TRIM do not make
+the eleventh automatic; they make the case for editing the number in this file,
+which is a change Jack makes.
 
 ## Prohibitions
 
