@@ -292,7 +292,7 @@ them were that bug. Findings, so a future sighting isn't re-diagnosed from scrat
 None of the four blocked a real trading-review run at any point the log or cron
 history covers. No code change made here.
 
-## 17. Thresholds are defaults a departure may read past, not rules to keep adding to
+## 18. Thresholds are defaults a departure may read past, not rules to keep adding to
 
 **2026-09-02.** §16 escalated what the rules could not determine, and the first
 thing it escalated was a buy-vs-exit conflict on GOOGL. Jack's reply was the
