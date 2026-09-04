@@ -147,6 +147,10 @@ author's `trader` profile, delivering the digest to Telegram. It is iMac-only an
 refuses to run as any other user; it exists so the job's definition stays
 versioned in this repo rather than in the runtime. The job is created **paused** —
 installing is not enabling.
+>
+> The delivery target defaults to `TRADER_CRON_DELIVER` when the host sets it, so a
+> specific chat — or a forum topic, `telegram:<chat_id>:<thread_id>` — can be chosen
+> without that id living in this public repo. An explicit first argument still wins.
 
 > **Keychain note (macOS).** Claude stores its OAuth token in the login Keychain,
 > which is reachable from the **GUI login session** where LaunchAgents run — not
