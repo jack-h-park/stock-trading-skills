@@ -112,11 +112,25 @@ fi
 # to stop the US figure below being read as the whole portfolio, and that job is
 # now done by the wording of the US line instead of by a duplicate.
 
+# The usage footer send_discord.py appends is computed from Hermes' session
+# store, which cannot see this job: run-review.sh spends its money in four
+# `claude -p` SUBPROCESSES, one level below the runtime that would have recorded
+# it. Sending with nothing to attribute used to produce "— no LLM · 100%
+# deterministic" on a message that had just cost $6.49 (2026-09-09, four calls,
+# in logs/cron/<date>.run.log and in ~/.hermes/logs/trader-usage.jsonl).
+#
+# So name the log the subprocesses already write. It stays the one source of
+# truth for this spend — the control plane's collector reads the same file for
+# the Observatory rollup, and the footer's ledger row is written unattributed so
+# the two readers cannot double-count one run.
+TRADER_USAGE_LOG="${TRADER_USAGE_LOG:-$HOME/.hermes/logs/trader-usage.jsonl}"
+
 deliver_agentic() {
   [ -f "$AGENTIC" ] || return 0
   local sender="$HOME/workspace/ai-assets/jackhpark-hermes-control-plane/gateway/scripts/send_discord.py"
   if [ -n "${DISCORD_BOT_TOKEN:-}" ] && [ -n "${DISCORD_HOME_CHANNEL:-}" ] && [ -f "$sender" ]; then
     if python3 "$sender" --bot-token "$DISCORD_BOT_TOKEN" --channel-id "$DISCORD_HOME_CHANNEL" \
+         --usage-unit-key trading-review --usage-log "$TRADER_USAGE_LOG" \
          < "$AGENTIC" >/dev/null 2>&1; then
       return 0
     fi
