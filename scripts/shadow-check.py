@@ -22,17 +22,22 @@ dual-implementation drift this repo has been bitten by before, and a checker tha
 can disagree with the thing it checks proves nothing about either.
 
 Python 3.9 compatible: the iMac runs system python with no venv.
+`from __future__ import annotations` makes every annotation a lazy string, so
+PEP 604 `X | Y` syntax below never actually executes on 3.9.
 
 usage: shadow-check.py [--date YYYY-MM-DD] [--repo PATH] [--db PATH] [--quiet]
 exit 0 always — this is a reporting path, never a gate.
 """
+
+from __future__ import annotations
+
 import argparse
 import datetime
 import json
-import os
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 DEFAULT_DB = Path.home() / (
     "workspace/data/stock-management/outputs/stock-portfolio-observatory"
@@ -57,15 +62,15 @@ TOLERANCE_PCT = 0.0015
 TOLERANCE_MIN = 0.05
 
 
-def tolerance_for(price):
+def tolerance_for(price: float) -> float:
     return max(TOLERANCE_MIN, abs(float(price)) * TOLERANCE_PCT)
 
 
-def settled_close(db_path, symbol, price_date):
+def settled_close(db_path: str, symbol: str, price_date: str) -> float | None:
     """The settled US close for a symbol on a date, or None if we have no row."""
     if not Path(db_path).exists():
         return None
-    con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True)
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         row = con.execute(
             "select close from historical_prices"
@@ -77,9 +82,9 @@ def settled_close(db_path, symbol, price_date):
     return None if row is None else float(row[0])
 
 
-def check(record, db_path):
+def check(record: dict[str, Any], db_path: str) -> list[dict[str, Any]]:
     """Compare each decision's price against the settled close for the date it used."""
-    findings = []
+    findings: list[dict[str, Any]] = []
     price_date = record.get("priceAsOf")
     for d in record.get("decisions") or []:
         symbol = d.get("symbol")
@@ -91,7 +96,7 @@ def check(record, db_path):
         actual = settled_close(db_path, symbol, price_date)
         if actual is None:
             findings.append({"symbol": symbol, "verdict": "no-settled-row",
-                             "detail": "no US close stored for %s on %s" % (symbol, price_date)})
+                             "detail": f"no US close stored for {symbol} on {price_date}"})
             continue
         delta = float(used) - actual
         findings.append({
@@ -103,7 +108,7 @@ def check(record, db_path):
     return findings
 
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", help="review date to check (default: the newest record)")
     ap.add_argument("--repo", default=str(Path(__file__).resolve().parent.parent))
@@ -112,8 +117,9 @@ def main():
     args = ap.parse_args()
 
     reviews = Path(args.repo) / "logs" / "reviews"
+    path: Path | None
     if args.date:
-        path = reviews / ("%s.decisions.json" % args.date)
+        path = reviews / (f"{args.date}.decisions.json")
     else:
         found = sorted(reviews.glob("*.decisions.json"))
         path = found[-1] if found else None
@@ -123,7 +129,7 @@ def main():
         # is nothing to check, and saying so loudly every session teaches nobody.
         if not args.quiet:
             print("shadow-check: no decision record yet%s" %
-                  ("" if not args.date else " for %s" % args.date))
+                  ("" if not args.date else f" for {args.date}"))
         return 0
 
     record = json.loads(path.read_text())
@@ -157,17 +163,23 @@ def main():
         return 0
 
     departures = record.get("departures") or []
-    print("shadow-check %s (would execute %s): %d auto-eligible, %d checked, %d departure(s)" % (
-        record.get("date"), record.get("targetSession"), len(auto), len(findings), len(departures)))
+    print(
+        f"shadow-check {record.get('date')} (would execute {record.get('targetSession')}): "
+        f"{len(auto)} auto-eligible, {len(findings)} checked, {len(departures)} departure(s)"
+    )
     for d in departures:
-        print("  read past: %s %s (%s) -> %s — %s" % (
+        print("  read past: {} {} ({}) -> {} — {}".format(
             d.get("symbol"), d.get("threshold"), d.get("observed"), d.get("did"), d.get("why", "")))
     for d in auto:
-        print("  would place: %s %s $%s — %s" % (
+        print("  would place: {} {} ${} — {}".format(
             d.get("side"), d.get("symbol"), d.get("notional"), d.get("reason", "")))
     for f in bad:
-        print("  ! %s %s: %s" % (f.get("symbol"), f["verdict"], f.get("detail") or
-              "used %s, settled %s (delta %s)" % (f.get("priceUsed"), f.get("settledClose"), f.get("delta"))))
+        detail = f.get("detail") or (
+            "used {}, settled {} (delta {})".format(
+                f.get("priceUsed"), f.get("settledClose"), f.get("delta")
+            )
+        )
+        print("  ! {} {}: {}".format(f.get("symbol"), f["verdict"], detail))
     return 0
 
 

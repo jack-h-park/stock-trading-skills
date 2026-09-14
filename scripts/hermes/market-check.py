@@ -5,8 +5,8 @@ Usage: python3 market-check.py
 Primary: exchange_calendars (pip install exchange_calendars).
 Fallback: hardcoded NYSE holiday list for 2025-2026 when the library is absent.
 """
-import sys
 import datetime
+import sys
 
 today = datetime.date.today()
 

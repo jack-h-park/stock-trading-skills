@@ -19,11 +19,11 @@ import sys
 from robinhood_token import TokenError, get_access_token
 
 
-def main():
+def main() -> None:
     try:
         sys.stdout.write(get_access_token())
     except TokenError as exc:
-        sys.stderr.write("%s\n" % exc)
+        sys.stderr.write(f"{exc}\n")
         sys.exit(1)
 
 
