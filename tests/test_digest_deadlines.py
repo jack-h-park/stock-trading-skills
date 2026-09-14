@@ -6,6 +6,7 @@ from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
     "c", Path(__file__).resolve().parent.parent / "scripts" / "check-digest-deadlines.py")
+assert spec is not None and spec.loader is not None
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
@@ -40,14 +41,17 @@ def main():
     bad = 0
     for text in EXPIRED:
         if not c.findings(text):
-            print("MISS (should flag): %s" % text); bad += 1
+            print(f"MISS (should flag): {text}")
+            bad += 1
     for text in FINE:
         hits = c.findings(text)
         if hits:
-            print("FALSE POSITIVE: %s -> %r" % (text, [h[1] for h in hits])); bad += 1
-    print("expired flagged: %d/%d | clean passed: %d/%d"
-          % (sum(1 for t in EXPIRED if c.findings(t)), len(EXPIRED),
-             sum(1 for t in FINE if not c.findings(t)), len(FINE)))
+            print(f"FALSE POSITIVE: {text} -> {[h[1] for h in hits]!r}")
+            bad += 1
+    print(
+        f"expired flagged: {sum(1 for t in EXPIRED if c.findings(t))}/{len(EXPIRED)} | "
+        f"clean passed: {sum(1 for t in FINE if not c.findings(t))}/{len(FINE)}"
+    )
     print("FAIL" if bad else "PASS")
     return 1 if bad else 0
 

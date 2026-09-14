@@ -10,22 +10,30 @@ Configured as mcp_servers.robinhood.command in the trader Hermes profile
 (via configure-live-trader.sh). Replaces the broken auth:oauth approach.
 
 Token file: ~/.hermes/profiles/trader/mcp-tokens/robinhood.json
+
+Runs under the iMac's system /usr/bin/python3 (same as robinhood_token.py,
+which it imports), not the Hermes venv. `from __future__ import annotations`
+makes every annotation a lazy string, so PEP 604 `X | Y` syntax below never
+actually executes on 3.9.
 """
+
+from __future__ import annotations
 
 import json
 import os
 import sys
 import urllib.request
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from robinhood_token import get_access_token  # noqa: E402
 
 MCP_URL = "https://agent.robinhood.com/mcp/trading"
 
-_session_id = None
+_session_id: str | None = None
 
 
-def _get_token():
+def _get_token() -> str:
     """Delegate to the shared store — single-flight refresh + atomic write.
 
     This process is respawned on every MCP reconnect and killed on every
@@ -35,7 +43,7 @@ def _get_token():
     return get_access_token()
 
 
-def _relay(msg, token):
+def _relay(msg: dict[str, Any], token: str) -> None:
     global _session_id
     headers = {
         "Content-Type": "application/json",
@@ -76,7 +84,7 @@ def _relay(msg, token):
         sys.stdout.flush()
 
 
-def main():
+def main() -> None:
     token = _get_token()
     for raw_line in sys.stdin:
         line = raw_line.strip()

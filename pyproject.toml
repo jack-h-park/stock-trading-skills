@@ -1,0 +1,38 @@
+[project]
+name = "stock-trading-skills"
+version = "0.1.0"
+description = "Operating layer for agentic brokerage trading: strategy, guardrails, and provider adapters."
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+# No __init__.py in tests/ or scripts/ -- without this, mypy resolves each
+# file to a bare top-level module name (e.g. "test_foo", not "tests.test_foo"),
+# which silently breaks the tests.* override below.
+explicit_package_bases = true
+mypy_path = ".:scripts"
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+check_untyped_defs = false

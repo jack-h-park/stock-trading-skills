@@ -53,8 +53,8 @@ FUTURE_QUALIFIER = re.compile(
 LOOKBEHIND = 60  # characters; enough for "before Wednesday's" and its lead-in
 
 
-def findings(text):
-    out = []
+def findings(text: str) -> list[tuple[int, str, str]]:
+    out: list[tuple[int, str, str]] = []
     for m in SAME_SESSION.finditer(text):
         window = text[max(0, m.start() - LOOKBEHIND):m.start()]
         if FUTURE_QUALIFIER.search(window):
@@ -65,7 +65,7 @@ def findings(text):
     return out
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     hits = 0
     for arg in argv:
         path = Path(arg)
@@ -73,9 +73,9 @@ def main(argv):
             continue
         for line, phrase, snippet in findings(path.read_text(encoding="utf-8")):
             hits += 1
-            print("%s:%d expired deadline %r — this message is written after the "
-                  "close, so a same-session deadline had already passed: ...%s..."
-                  % (path.name, line, phrase, snippet))
+            print(f"{path.name}:{line} expired deadline {phrase!r} — this message is written "
+                  f"after the close, so a same-session deadline had already passed: "
+                  f"...{snippet}...")
     if hits:
         print("PROMPT_D is supposed to rewrite these (see 'ACT-NOW OVERRIDE' in "
               "scripts/run-review.sh). A hit here means the prompt fix did not hold.")

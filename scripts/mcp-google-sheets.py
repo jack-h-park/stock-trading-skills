@@ -9,13 +9,16 @@ Exposes two tools to the Hermes trader agent:
 Auth: GOOGLE_APPLICATION_CREDENTIALS env var pointing at the service account JSON.
 Run:  GOOGLE_APPLICATION_CREDENTIALS=... python mcp-google-sheets.py
 
-SDK NOTE (2026-08-19): this targets the `mcp` 2.x server API — `MCPServer` with
-a `@server.tool()` decorator that derives the input schema from the signature.
-The original version used `mcp.server.Server` with `@server.list_tools()` /
-`@server.call_tool()`; in 2.x `Server` is the low-level transport object and has
-neither decorator, so the module raised AttributeError at import. It never
-started once — Hermes logged "MCP server 'google-drive' failed initial
-connection after 3 attempts, parking" and carried on without these tools.
+SDK NOTE (2026-09-13): targets `mcp.server.fastmcp.FastMCP`, whose
+`@server.tool()` decorator derives the input schema from the signature. An
+earlier version imported a nonexistent `mcp.server.MCPServer` (there is no
+`MCPServer` in this SDK's public API, at any version this repo has run
+against) -- which raised ImportError at module load, before FastMCP was
+ever reached. Caught by mypy (`Module "mcp.server" has no attribute
+"MCPServer"`), not by running it: like the `Server`/`list_tools` mismatch
+this replaced, it never started once. Hermes logged "MCP server
+'google-drive' failed initial connection after 3 attempts, parking" and
+carried on without these tools.
 """
 
 import asyncio
@@ -25,19 +28,23 @@ import os
 import sys
 from typing import Any
 
-from mcp.server import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 # ── Google Sheets client ──────────────────────────────────────────────────────
 
 
-def _sheets_service():
+def _sheets_service() -> Any:
+    # Neither google-auth nor googleapiclient ships inline types (build()
+    # returns a dynamically-generated Resource proxy by design), so this
+    # boundary stays Any rather than pulling in the third-party stub packages
+    # for one five-line client construction.
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
 
     creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if not creds_path:
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS not set")
-    creds = service_account.Credentials.from_service_account_file(
+    creds = service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
         creds_path,
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
     )
@@ -52,7 +59,8 @@ def _read_range(spreadsheet_id: str, range_: str) -> list[list[Any]]:
         .get(spreadsheetId=spreadsheet_id, range=range_)
         .execute()
     )
-    return result.get("values", [])
+    rows: list[list[Any]] = result.get("values", [])
+    return rows
 
 
 async def _read_range_async(spreadsheet_id: str, range_: str) -> list[list[Any]]:
@@ -91,7 +99,7 @@ HOLDINGS_DEFAULT_RANGE = f"'{HOLDINGS_TAB}'!A:Z" if HOLDINGS_TAB else "A:Z"
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
-server = MCPServer("google-sheets")
+server = FastMCP("google-sheets")
 
 
 @server.tool(
@@ -127,10 +135,11 @@ async def read_holdings() -> str:
     if not HOLDINGS_SHEET_ID or HOLDINGS_SHEET_ID.startswith("<"):
         return (
             "Error: HOLDINGS_SHEET_ID is not configured for this server "
-            "(got %r). It is injected by scripts/run-review.sh from the "
+            f"(got {HOLDINGS_SHEET_ID or None!r}). It is injected by scripts/run-review.sh "
+            "from the "
             "<US_HOLDINGS_SHEET_ID> row of config/accounts.local.md; the sheet "
             "itself is fine. Report this as a configuration fault, and do not "
-            "retry with a guessed id." % (HOLDINGS_SHEET_ID or None,)
+            "retry with a guessed id."
         )
     try:
         rows = await _read_range_async(HOLDINGS_SHEET_ID, HOLDINGS_DEFAULT_RANGE)

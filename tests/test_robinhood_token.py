@@ -117,6 +117,6 @@ def test_two_processes_refresh_exactly_once(tmp_path):
     for (out, err), p in zip(outs, procs):
         assert p.returncode == 0, err
         assert out == "access-v2", (out, err)
-    calls = [l for l in counter.read_text().splitlines() if l]
-    assert len(calls) == 1, "expected one refresh, got %d" % len(calls)
+    calls = [line for line in counter.read_text().splitlines() if line]
+    assert len(calls) == 1, f"expected one refresh, got {len(calls)}"
     assert json.loads(store.read_text())["refresh_token"] == "refresh-v2"

@@ -27,8 +27,12 @@ rare enough that it had never executed since the store was created on
 2026-08-12, and rare enough that a race would look like a random logout.
 
 Keep this module Python 3.9-safe: the proxy runs under the iMac's system
-/usr/bin/python3, not the Hermes venv.
+/usr/bin/python3, not the Hermes venv. `from __future__ import annotations`
+makes every annotation a lazy string, so PEP 604 `X | Y` syntax below never
+actually executes on 3.9 -- only non-annotation code has to stay 3.9-safe.
 """
+
+from __future__ import annotations
 
 import errno
 import fcntl
@@ -38,8 +42,10 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 TOKEN_FILE = Path.home() / ".hermes/profiles/trader/mcp-tokens/robinhood.json"
 CLIENT_ID = "LtLiNmbs9owbYfWgBlC68Z2VujIPuvGoAiSYr8xW"
@@ -53,12 +59,12 @@ class TokenError(RuntimeError):
     """Token store could not produce a usable access token."""
 
 
-def _lock_path(path):
+def _lock_path(path: Path) -> Path:
     return path.with_name(path.name + ".lock")
 
 
 @contextmanager
-def _exclusive(path, timeout=LOCK_TIMEOUT_SECONDS):
+def _exclusive(path: Path, timeout: float = LOCK_TIMEOUT_SECONDS) -> Iterator[None]:
     """flock the sidecar .lock file, or raise TokenError on timeout.
 
     The lock is a sidecar rather than the token file itself so the lock is held
@@ -78,7 +84,7 @@ def _exclusive(path, timeout=LOCK_TIMEOUT_SECONDS):
                     raise
                 if time.time() >= deadline:
                     raise TokenError(
-                        "timed out after %ds waiting for %s" % (timeout, lock)
+                        f"timed out after {timeout}s waiting for {lock}"
                     )
                 time.sleep(0.2)
         yield
@@ -89,19 +95,20 @@ def _exclusive(path, timeout=LOCK_TIMEOUT_SECONDS):
             os.close(fd)
 
 
-def _read(path):
+def _read(path: Path) -> dict[str, Any]:
     with open(str(path)) as fh:
-        return json.load(fh)
+        data: dict[str, Any] = json.load(fh)
+        return data
 
 
-def _write_atomic(path, data):
+def _write_atomic(path: Path, data: dict[str, Any]) -> None:
     """Write 0600 via a same-directory temp file + os.replace.
 
     Same directory so the replace is a rename within one filesystem, which is
     atomic; a reader therefore sees either the old file or the new one, never a
     half-written one.
     """
-    tmp = path.with_name("%s.tmp.%d" % (path.name, os.getpid()))
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
     fd = os.open(str(tmp), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
     try:
         with os.fdopen(fd, "w") as fh:
@@ -117,12 +124,12 @@ def _write_atomic(path, data):
         raise
 
 
-def _needs_refresh(token, now=None):
+def _needs_refresh(token: dict[str, Any], now: float | None = None) -> bool:
     now = time.time() if now is None else now
     return now + EXPIRY_BUFFER_SECONDS >= float(token.get("expires_at", 0))
 
 
-def _post_refresh(refresh_tok):
+def _post_refresh(refresh_tok: str) -> dict[str, Any]:
     body = urllib.parse.urlencode(
         {
             "grant_type": "refresh_token",
@@ -137,21 +144,22 @@ def _post_refresh(refresh_tok):
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+        result: dict[str, Any] = json.loads(resp.read())
+        return result
 
 
-def get_access_token(token_file=TOKEN_FILE):
+def get_access_token(token_file: Path = TOKEN_FILE) -> str:
     """Return a valid access_token, refreshing under an exclusive lock if due."""
     path = Path(token_file)
     try:
         token = _read(path)
     except FileNotFoundError:
-        raise TokenError("Token file not found: %s" % path)
+        raise TokenError(f"Token file not found: {path}")
     except ValueError as exc:
-        raise TokenError("Token file is not valid JSON (%s): %s" % (path, exc))
+        raise TokenError(f"Token file is not valid JSON ({path}): {exc}")
 
     if not _needs_refresh(token):
-        return token["access_token"]
+        return str(token["access_token"])
 
     with _exclusive(path):
         # Re-read INSIDE the lock. Another process may have refreshed while we
@@ -159,12 +167,12 @@ def get_access_token(token_file=TOKEN_FILE):
         # spent, so refreshing again would fail and overwrite a good file.
         token = _read(path)
         if not _needs_refresh(token):
-            return token["access_token"]
+            return str(token["access_token"])
 
         try:
             new = _post_refresh(token["refresh_token"])
         except Exception as exc:
-            raise TokenError("Token refresh failed: %s" % exc)
+            raise TokenError(f"Token refresh failed: {exc}")
 
         token["access_token"] = new["access_token"]
         if "refresh_token" in new:
@@ -174,12 +182,12 @@ def get_access_token(token_file=TOKEN_FILE):
             new.get("expires_in", DEFAULT_EXPIRES_IN)
         )
         _write_atomic(path, token)
-        return token["access_token"]
+        return str(token["access_token"])
 
 
 if __name__ == "__main__":
     try:
         sys.stdout.write(get_access_token())
     except TokenError as exc:
-        sys.stderr.write("%s\n" % exc)
+        sys.stderr.write(f"{exc}\n")
         sys.exit(1)
