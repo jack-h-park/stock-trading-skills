@@ -9,16 +9,33 @@ Exposes two tools to the Hermes trader agent:
 Auth: GOOGLE_APPLICATION_CREDENTIALS env var pointing at the service account JSON.
 Run:  GOOGLE_APPLICATION_CREDENTIALS=... python mcp-google-sheets.py
 
-SDK NOTE (2026-09-13): targets `mcp.server.fastmcp.FastMCP`, whose
-`@server.tool()` decorator derives the input schema from the signature. An
-earlier version imported a nonexistent `mcp.server.MCPServer` (there is no
-`MCPServer` in this SDK's public API, at any version this repo has run
-against) -- which raised ImportError at module load, before FastMCP was
-ever reached. Caught by mypy (`Module "mcp.server" has no attribute
-"MCPServer"`), not by running it: like the `Server`/`list_tools` mismatch
-this replaced, it never started once. Hermes logged "MCP server
-'google-drive' failed initial connection after 3 attempts, parking" and
-carried on without these tools.
+SDK NOTE: targets the `mcp` 2.x server API — `mcp.server.MCPServer`, whose
+`@server.tool()` decorator derives the input schema from the signature. The
+production interpreter is the Hermes venv on the ops host, and it runs mcp 2.0.0:
+`MCPServer` exists there and `mcp.server.fastmcp` does not.
+
+History, because this line has now been changed in the wrong direction once:
+
+- 2026-08-19: the first version used `mcp.server.Server` with
+  `@server.list_tools()` / `@server.call_tool()`. In 2.x `Server` is the
+  low-level transport object with neither decorator, so it raised at import
+  and never started. Moved to `MCPServer`.
+- 2026-09-01 to 09-04: `MCPServer` worked. `read_holdings` was called through
+  this module on the ops host and returned the 86-position grid, and the
+  reconcile logged "sheet read cleanly" on each of those days.
+- 2026-09-13 (#48, "ruff + mypy --strict; fix all findings"): mypy reported
+  `Module "mcp.server" has no attribute "MCPServer"` and the import was switched
+  to `mcp.server.fastmcp.FastMCP`, with a note saying `MCPServer` had never
+  started. That was wrong. mypy had resolved `mcp>=1.0.0` to a 1.x SDK — where
+  `fastmcp` exists and `MCPServer` does not — while production runs 2.0.0, where
+  it is the other way round. The note said it was caught by mypy "not by running
+  it", and running it is what would have shown otherwise. The server then failed
+  at import on every review from 2026-09-15, and the reconcile reported "the
+  google-drive MCP was unavailable" until this was restored.
+
+pyproject.toml now requires `mcp>=2.0.0`, so a type checker resolves the same
+API production imports. If mypy ever disagrees with this import again, check
+which `mcp` it resolved before believing it over a running server.
 """
 
 import asyncio
@@ -28,7 +45,7 @@ import os
 import sys
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 # ── Google Sheets client ──────────────────────────────────────────────────────
 
@@ -99,7 +116,7 @@ HOLDINGS_DEFAULT_RANGE = f"'{HOLDINGS_TAB}'!A:Z" if HOLDINGS_TAB else "A:Z"
 
 # ── MCP server ────────────────────────────────────────────────────────────────
 
-server = FastMCP("google-sheets")
+server = MCPServer("google-sheets")
 
 
 @server.tool(

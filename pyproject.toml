@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Operating layer for agentic brokerage trading: strategy, guardrails, and provider adapters."
 requires-python = ">=3.12"
 dependencies = [
-    "mcp>=1.0.0",
+    # >=2.0.0, not >=1.0.0: the server API changed between them (1.x has
+    # mcp.server.fastmcp, 2.x has mcp.server.MCPServer), and production runs
+    # 2.0.0. A looser floor let mypy check against 1.x and "fix" a working import
+    # into one that failed at load on the ops host (#48).
+    "mcp>=2.0.0",
 ]
 
 [project.optional-dependencies]
