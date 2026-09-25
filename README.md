@@ -143,14 +143,15 @@ loads a LaunchAgent for weekdays at 13:30 PT — 30 minutes after the US close.
 Use this if you are not running an agent runtime of your own.
 
 **Hermes cron.** `scripts/hermes/install-cron.sh` declares the same job under the
-author's `trader` profile, delivering the digest to Telegram. It is iMac-only and
-refuses to run as any other user; it exists so the job's definition stays
-versioned in this repo rather than in the runtime. The job is created **paused** —
-installing is not enabling.
+author's `trader` profile, delivering the digest to Telegram. It runs only on the
+host whose `~/.hermes/role` file says `ops` (the account name does not matter) and
+refuses anywhere else; it exists so the job's definition stays versioned in this repo
+rather than in the runtime. The job is created **paused** — installing is not enabling.
 >
-> The delivery target defaults to `TRADER_CRON_DELIVER` when the host sets it, so a
-> specific chat — or a forum topic, `telegram:<chat_id>:<thread_id>` — can be chosen
-> without that id living in this public repo. An explicit first argument still wins.
+> The delivery target has no default. Pass it as the first argument, or set
+> `TRADER_CRON_DELIVER`, so a specific chat — or a forum topic,
+> `telegram:<chat_id>:<thread_id>` — can be chosen without that id living in this
+> public repo. The argument wins when both are set.
 
 > **Keychain note (macOS).** Claude stores its OAuth token in the login Keychain,
 > which is reachable from the **GUI login session** where LaunchAgents run — not
