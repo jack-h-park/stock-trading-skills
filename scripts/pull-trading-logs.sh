@@ -30,7 +30,7 @@
 
 set -uo pipefail
 
-HOST="${TRADER_LOG_HOST:-hermes-runner@imac-hermes}"
+HOST="${TRADER_LOG_HOST:-ops-host}"
 REMOTE_REPO="${TRADER_LOG_REMOTE_REPO:-workspace/ai-assets/jackhpark-stock-trading-skills}"
 ARCHIVE="${TRADER_LOG_ARCHIVE:-$HOME/workspace/data/stock-management/trading-logs}"
 DRY=""
