@@ -128,11 +128,18 @@ echo "===== run-review start $NOW =====" >> "$RUNLOG"
 # The Google Drive MCP is a local stdio Python script that uses a service-account key.
 # All three parallel jobs share this one config (read-only tools only).
 MCP_CONFIG_FILE="/tmp/trading-review-mcp-$$.json"
+# Preflight only. The MCP config below no longer carries this token: the review
+# reaches Robinhood through mcp-robinhood-proxy.py, which reads the same store
+# (robinhood_token.TOKEN_FILE) itself on every reconnect. Fetching it here still
+# earns its place — it fails the run with one clear log line when the store is
+# missing or the refresh is broken, instead of letting four prompts each fail
+# with an MCP handshake error.
 ROBINHOOD_TOKEN="$("$PYTHON" "$HERE/_get_robinhood_token.py" 2>>"$RUNLOG")"
 if [ -z "$ROBINHOOD_TOKEN" ]; then
   echo "ERROR: could not obtain Robinhood OAuth token — aborting" >> "$RUNLOG"
   exit 1
 fi
+unset ROBINHOOD_TOKEN
 GCP_SA_KEY="$HOME/.config/stock-portfolio-briefing/gcp-sheets-sa.json"
 SHEETS_MCP_SCRIPT="$REPO/scripts/mcp-google-sheets.py"
 
@@ -158,15 +165,19 @@ fi
 # Fall back to system python3 for local dev runs where the venv isn't present.
 HERMES_VENV_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python"
 [ -x "$HERMES_VENV_PYTHON" ] || HERMES_VENV_PYTHON="$PYTHON"
-"$PYTHON" - "$MCP_CONFIG_FILE" "$ROBINHOOD_TOKEN" "$HERMES_VENV_PYTHON" "$SHEETS_MCP_SCRIPT" "$GCP_SA_KEY" "$HOLDINGS_SHEET_ID" << 'PYEOF'
+# The robinhood entry is the read-only proxy, not a direct HTTP endpoint. That is
+# what makes "this job cannot trade" a property of the server it is pointed at
+# rather than of --allowedTools below, which only `claude -p` understands. The
+# gateway runs the same script without the flag, because the interactive agent is
+# authorized to place orders (config/guardrails.md).
+"$PYTHON" - "$MCP_CONFIG_FILE" "$PYTHON" "$HERE/mcp-robinhood-proxy.py" "$HERMES_VENV_PYTHON" "$SHEETS_MCP_SCRIPT" "$GCP_SA_KEY" "$HOLDINGS_SHEET_ID" << 'PYEOF'
 import json, sys
-out, token, py, script, sa, sheet_id = sys.argv[1:7]
+out, rh_py, rh_proxy, py, script, sa, sheet_id = sys.argv[1:8]
 cfg = {
     "mcpServers": {
         "robinhood": {
-            "type": "http",
-            "url": "https://agent.robinhood.com/mcp/trading",
-            "headers": {"Authorization": f"Bearer {token}"}
+            "command": rh_py,
+            "args": [rh_proxy, "--read-only"]
         },
         "google-drive": {
             "command": py,

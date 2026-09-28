@@ -32,8 +32,12 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
 
 > **Where this authorization does and does not reach.** It is written for the
 > interactive agent, which holds `place_equity_order`. The scheduled review
-> (`scripts/run-review.sh`) does not: its `--allowedTools` whitelist grants read
-> tools only, deliberately, so a cron job physically cannot trade. So the standing
+> (`scripts/run-review.sh`) does not: it reaches Robinhood through
+> `scripts/mcp-robinhood-proxy.py --read-only`, which refuses every write tool and
+> omits it from `tools/list`, so a cron job physically cannot trade. Its
+> `--allowedTools` whitelist narrows the job further to the seven tools it needs,
+> but is no longer the only thing standing there — that whitelist is a flag of one
+> CLI, and the guarantee now belongs to the server the job is pointed at. So the standing
 > authorization has never fired from the scheduled path — every proposal it produces
 > waits for Jack to open a session, including the ones that are wholly determined by
 > the rules above. That gap is the subject of `docs/decisions.md` §16; nothing here
