@@ -216,6 +216,19 @@ fi
 
 CRITICAL_RO="CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders under any circumstances. Do not call place_equity_order or cancel_equity_order. Do not write to the Google Sheet. Do NOT run any git command — committing is handled by a separate step."
 
+# The price every job computes from. The prompts said "the latest price" in one
+# place and "the closing prices you used" in another, and the Robinhood quote
+# tool's own guidance says to take whichever of last_trade_price and
+# last_non_reg_trade_price is more recent. On a same-date run on Sunday
+# 2026-09-27, with overnight trading open, one model read that as the Friday
+# close and the other as a Sunday-overnight print: META came out 5.67% below its
+# 20-day high instead of above the line, raised a BUY that the one-direction rule
+# then blocked, and the decision record said priceAsOf 2026-09-25 beside a price
+# from 09-27. The same fork exists every weekday at 13:30 PT, when after-hours
+# trading is open. shadow-check.py compares priceUsed with the settled close, so
+# the regular session is the only basis that can be checked.
+PRICE_BASIS="PRICE BASIS: every signal, drawdown, take-profit, stop-loss, sleeve value and priceUsed in this job is computed from the REGULAR session only. From get_equity_quotes use quote.last_trade_price — the last regular-session trade, which is that session's close once 13:00 PT has passed — and NEVER quote.last_non_reg_trade_price, even though the tool's own guidance says to prefer whichever is more recent. Extended-hours and overnight prints may be mentioned as context and are never an input. Set priceAsOf to the date of that regular session."
+
 # ── Job A — Agentic BUY/TRIM signals + review ────────────────────────────────
 PROMPT_A="You are running the scheduled, READ-ONLY portfolio-review for this repo's Robinhood Agentic trading account. Today is ${TODAY}. Produce ONLY the Agentic signals report — reconcile and the cross-account overview are handled by other jobs; do not do them here.
 
@@ -243,6 +256,7 @@ Steps:
 Set autoEligible true ONLY when every condition in the 'Standing authorization' list in config/guardrails.md holds for that order AND the order carries no departure — a departure is judgement rather than arithmetic, so it goes to Jack to read — in particular it is false for every sell, and false for a buy whose symbol also carries an exit signal. You are not placing anything; this file records what the rules determined so it can be checked afterwards against what actually happened.
 5. Write the report to logs/reviews/${TODAY}.md following the format in skills/log/SKILL.md (append a timestamped section if the file already exists). Include both BUY proposals and TRIM+REDISTRIBUTE proposals in separate sections. PROPOSALS ONLY. Do not add a portfolio-overview section here. Do not commit.
 
+${PRICE_BASIS}
 ${CRITICAL_RO}"
 
 # ── Job B — Reconcile live positions vs the holdings sheet ────────────────────
@@ -254,6 +268,7 @@ Steps:
 2b. TRADE-LOG CHECK: call mcp__robinhood__get_equity_orders for the Agentic account <AGENTIC_ACCOUNT> with state=filled and placed_agent=agentic. Keep only fills whose date is within the lookback window AND on or after the floor date in config/trade-log-check.md — silently discard everything before the floor, which is the documented pre-existing backlog in the untracked logs/trades/README.md and is not a finding. For each remaining fill, read logs/trades/<fill-date>.md and decide whether it covers that fill: the entry names the order id, or failing that the same symbol and side on that date. Any fill with no covering entry is a finding, and so is any fill you cannot decide — the config fixes the tie-break toward reporting. This is bookkeeping about THIS repo's journal, not a position discrepancy and not an unauthorised trade: the broker is right and the log is incomplete. Do NOT write, create or amend anything under logs/trades/ — reporting the gap is the whole job, and writing an entry from broker data would fabricate a decision record (docs/decisions.md#15).
 3. Write both results to logs/reconcile/${TODAY}.md, the trade-log findings under their own '## Trade-log check' heading per the alert wording in config/trade-log-check.md. Write that heading even when the window is clean. Where you note that the Agentic account was not sheet-reconciled, say which reconcile it is out of scope for and that the trade-log check covers it — do not write the bare sentence 'Agentic account (<AGENTIC_ACCOUNT>) is out of scope for this reconcile', which reads as though the one account this repo trades is the one account nothing checks. Report only — do NOT write to the sheet. Do not commit.
 
+${PRICE_BASIS}
 ${CRITICAL_RO}"
 
 # ── Job C — Full cross-account portfolio overview (informational) ─────────────
@@ -277,6 +292,7 @@ Steps:
 3. Write a SELF-CONTAINED markdown section to logs/reviews/${TODAY}.overview.md (overwrite if it exists) titled with a '## Full Portfolio Overview' heading, containing: (1) account-by-account summary table (account | # positions | total value), (2) a clearly labelled cross-account grand total line, (3) highlights table.
 3a. THE GRAND TOTAL ALWAYS MEANS THE SAME THING: every asset every account holds — equities, cash AND crypto — with nothing excluded. State the composition on the total line, naming each non-equity component and its amount (e.g. 'includes \$1,982.97 cash and \$19,908.20 crypto in Mid-term'). This is a day-over-day figure Jack tracks, so a total whose definition moves is worse than one that is merely large: on 2026-07-30 crypto was excluded and said so, on 07-31 it was silently included, and the number jumped \$22,642 on a day the US market rose about 1%. If a component cannot be priced, still list it and say so rather than dropping it from the sum. This section is informational only — all proposals and execution remain scoped to the Agentic account. Do not write to logs/reviews/${TODAY}.md. Do not commit.
 
+${PRICE_BASIS}
 ${CRITICAL_RO}"
 
 # ── Run A, B, C concurrently; each writes its own file, none commit. ──────────
