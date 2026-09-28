@@ -158,6 +158,7 @@ rather than in the runtime. The job is created **paused** — installing is not 
 > a login it finds in `~/.codex` when a profile's own credential breaks, and two
 > programs on one refresh-token family log each other out. Sign in once, as the
 > account the job runs as:
+> `mkdir -m 700 -p ~/.codex-trader-review` (codex refuses a CODEX_HOME that does not exist), then
 > `CODEX_HOME=~/.codex-trader-review codex login --device-auth`, and check with
 > `CODEX_HOME=~/.codex-trader-review codex login status`. "Not logged in" fails
 > every job with a 401.

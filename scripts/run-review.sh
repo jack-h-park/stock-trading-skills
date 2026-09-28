@@ -78,6 +78,8 @@ CODEX="$(command -v codex || echo /opt/homebrew/bin/codex)"
 # refreshes first logs the other out — for every profile that adopted it. A
 # directory Hermes never reads keeps this login its own session.
 export CODEX_HOME="${TRADER_CODEX_HOME:-$HOME/.codex-trader-review}"
+# codex refuses a CODEX_HOME that does not exist ("Error loading configuration").
+mkdir -p "$CODEX_HOME" && chmod 700 "$CODEX_HOME"
 GIT="$(command -v git || echo /usr/bin/git)"
 PYTHON="$(command -v python3 || echo /usr/bin/python3)"
 
