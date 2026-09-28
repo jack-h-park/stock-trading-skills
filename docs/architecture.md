@@ -97,13 +97,13 @@ Mid-term `<MIDTERM_ACCOUNT>`) and external brokerages are **reference/reconcile 
 ## Control flow
 
 ```
-[AUTO, weekday 13:30 PT]  launchd → scripts/run-review.sh → headless `claude -p`
+[AUTO, weekday 13:30 PT]  launchd → scripts/run-review.sh → headless `codex exec`
     ├─ read strategy/, config/, providers/
     ├─ Robinhood MCP: portfolio, positions, quotes, historicals  (read-only)
     ├─ compute 20-day-high dip signals  →  logs/reviews/<date>.md
     ├─ Google Drive MCP: read sheet  →  diff vs RH  →  logs/reconcile/<date>.md
     └─ write the digest (nothing is committed — logs/ is gitignored)
-        ⚠ tool whitelist excludes place/cancel order + sheet write → cannot trade
+        ⚠ read-only proxy + enabled_tools exclude place/cancel order + sheet write → cannot trade
 
 [MANUAL, interactive session, market hours]  user: "execute the proposal"
     └─ recompute live → review_equity_order → user confirms → place_equity_order
@@ -112,11 +112,13 @@ Mid-term `<MIDTERM_ACCOUNT>`) and external brokerages are **reference/reconcile 
 
 ## Safety model
 
-- **Scheduled job is structurally read-only.** `scripts/run-review.sh` passes an
-  `--allowedTools` whitelist of Robinhood *read* tools + Drive read + file write + git only.
-  `place_equity_order` / `cancel_equity_order` and any Sheet-write are not whitelisted, so
-  the cron physically cannot trade or mutate the sheet (verified: a non-whitelisted order
-  tool returns `BLOCKED_AS_EXPECTED` without hanging).
+- **Scheduled job is structurally read-only.** Robinhood is reached only through
+  `scripts/mcp-robinhood-proxy.py --read-only` (refuses every non-read tool), and
+  `scripts/codex_args.py` gives codex an `enabled_tools` list of seven Robinhood reads and
+  two sheet reads, so no order, cancel or sheet-write tool is ever shown to the model. Shell
+  commands run under `--sandbox workspace-write` with network off: `git commit` cannot take
+  `.git/index.lock` and no host resolves. Until 2026-09-28 the guard was `claude -p`'s
+  `--allowedTools` whitelist ([decisions §19](decisions.md#19-the-review-runs-on-codex-on-the-trader-profiles-model)).
 - **Live trades require a human.** Confirm-before-place is the default in
   `config/guardrails.md`; standing auto-place is defined but off.
 - **Order placement is irreversible** and the user is ultimately responsible for it

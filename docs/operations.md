@@ -11,7 +11,7 @@ US Pacific time) so it isn't skipped when the laptop sleeps.
 - LaunchAgent label: `com.jackpark.stock-trading-review`
 - Schedule: weekdays (Mon–Fri) **13:30 PT = 16:30 ET** (30 min after the US close)
 - Repo on host: `~/workspace/ai-assets/jackhpark-stock-trading-skills`
-- Runner: `scripts/run-review.sh` → headless `claude -p` (review + reconcile + digest; commits nothing)
+- Runner: `scripts/run-review.sh` → headless `codex exec` on the trader profile's model (review + reconcile + digest; commits nothing)
 
 ## Daily flow
 

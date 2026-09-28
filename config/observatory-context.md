@@ -18,9 +18,10 @@ any ranked list. See "How to use it" below — that boundary is the whole point 
 - Path: `$STOCK_BRIEFING_SUMMARY_PATH`, default
   `~/workspace/data/stock-management/outputs/stock-portfolio-observatory/briefing-summary.json`
 - **Those two forms are for a human reading this file.** `run-review.sh` resolves the path in
-  the shell and hands the prompt a literal absolute one, because the scheduled job has `Read`
-  but not `Bash` — an agent given `$VAR` or a leading `~` has no way to open the file except to
-  shell out, and that call is denied. Do not reintroduce either form into a prompt.
+  the shell and hands the prompt a literal absolute one. Under `claude -p` that was forced —
+  the job had `Read` but not `Bash`, so a `$VAR` or leading `~` could not be opened at all.
+  The review now runs `codex exec`, which could expand them, but a resolved path still pins
+  which file the prompt means. Do not reintroduce either form into a prompt.
 - Written by the Observatory's `pnpm refresh` (weekdays 14:00), and by `pnpm summary` on demand.
 - **Read-only, and read as a file.** Never call the Observatory app. It is a LAN service that
   may be down; the review must not depend on it.

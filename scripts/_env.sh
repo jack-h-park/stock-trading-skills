@@ -1,37 +1,17 @@
 #!/usr/bin/env bash
-# Portable PATH + CLAUDE_CODE_OAUTH_TOKEN for headless cron.
-# The actual token lives outside the repo (chmod 600, not committed here).
-# Reuses the same credential file as the briefing publisher — same hermes-runner
-# account and Claude subscription. Source this before calling `claude -p`.
+# Portable PATH for headless cron: launchd and Hermes cron scripts start with a
+# minimal PATH, and codex, git and python3 live in per-user or Homebrew prefixes.
 #
-# Token setup: run `claude setup-token` as hermes-runner and save the output to
-# ~/.config/stock-portfolio-briefing/anthropic_oauth_token (chmod 600).
+# This file used to also export CLAUDE_CODE_OAUTH_TOKEN and pin the review's
+# models (claude-opus-4-8 for jobs A/B/C, claude-sonnet-4-6 for the digest, set
+# 2026-07-22). The review now runs `codex exec`, authenticated by codex's own
+# login (`codex login`, stored under CODEX_HOME), and takes its model from the
+# trader Hermes profile through scripts/trader_model.py. A pin here would be a
+# second copy of that choice, and the second copy is what drifted: the review
+# ran two model generations behind the profile's gateway with nothing saying so.
+# To step down for one run, set TRADER_MODEL (and TRADER_DIGEST_MODEL) instead.
 
 for d in "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin "$HOME/.hermes/node/bin" "$HOME/.npm-global/bin"; do
   [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH";; esac
 done
 export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
-
-TOKEN_FILE="${CLAUDE_TOKEN_FILE:-$HOME/.config/stock-portfolio-briefing/anthropic_oauth_token}"
-if [ -f "$TOKEN_FILE" ] && [ -s "$TOKEN_FILE" ]; then
-  CLAUDE_CODE_OAUTH_TOKEN="$(cat "$TOKEN_FILE" | tr -d '[:space:]')"
-  export CLAUDE_CODE_OAUTH_TOKEN
-fi
-
-# Model for every `claude -p` call in this repo. Pinned rather than left to the
-# CLI default: without it the model is whatever the logged-in account happens to
-# select, so the model behind the trade signals can change with no commit and no
-# alert.
-#
-# Prompts A/B/C do the analytical work: live Robinhood MCP reads, dip-signal
-# computation, ranking candidate trades, and reconciling broker holdings against
-# the manual sheet. That is multi-step quantitative reasoning over money, so it
-# runs on the top tier.
-#
-# This was claude-sonnet-4-6 (the inherited account default) until 2026-07-22.
-export TRADER_CLAUDE_MODEL="${TRADER_CLAUDE_MODEL:-claude-opus-4-8}"
-
-# The digest/commit step (prompt D) formats files the analytical jobs already
-# wrote and calls no MCP tool, so it does not need the top tier. Kept on the
-# previous model — raising it would spend Opus on string formatting.
-export TRADER_DIGEST_MODEL="${TRADER_DIGEST_MODEL:-claude-sonnet-4-6}"

@@ -29,7 +29,7 @@ the other, and the Agentic account is exactly that case.
 - Robinhood positions per mapped account via `get_equity_positions`.
 - Filled Agentic orders via `get_equity_orders`.
 - Sheet contents via the Google Drive MCP `read_file_content`.
-- `logs/trades/*.md` via Glob/Read.
+- `logs/trades/*.md`, read as files.
 
 ## Steps — A. Sheet drift
 

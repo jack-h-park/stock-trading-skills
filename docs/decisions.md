@@ -52,6 +52,10 @@ nondeterminism (LLM arithmetic) is small; a future Python compute step (option C
 remove it entirely at the cost of more code.
 
 ## 8. Scheduled job is structurally read-only
+> **Mechanism superseded 2026-09-28** — the decision stands; how it is enforced moved to
+> the read-only proxy and codex's `enabled_tools` (§19). The paragraph below describes
+> the `claude -p` era.
+
 The cron must never trade unattended. `scripts/run-review.sh` whitelists only Robinhood read
 tools + Drive read + file write + git via `--allowedTools`; order/cancel/sheet-write tools are
 omitted. Verified a non-whitelisted order tool is denied headlessly without hanging
@@ -82,6 +86,9 @@ User chose local cron. launchd on `hermes-runner@imac-hermes` (always on) so run
 skipped when the laptop sleeps. Mirrors the existing `briefing-publish` migration pattern.
 
 ### 12a. macOS Keychain constraint (important)
+> **Historical (`claude -p` era).** The review no longer runs `claude -p` (§19); this
+> constraint applied to Claude's login, not to codex's.
+
 Claude's OAuth token lives in the macOS **login Keychain**, reachable only from the **GUI
 login session** (where launchd LaunchAgents run) — not from a non-interactive ssh shell. So a
 bare `claude -p` over ssh shows "Not logged in" even though the job works under launchd.
@@ -345,3 +352,30 @@ reversible — the thresholds are still there, and the departures are all on rec
 cannot anticipate and the agent should not decide alone — a pending acquisition, a
 halt, an earnings gap that makes the 20-day high meaningless. A threshold overlap
 was never one of those.
+
+## 19. The review runs on codex, on the trader profile's model
+*2026-09-28.* `scripts/run-review.sh` ran `claude -p` on models pinned in `scripts/_env.sh`
+(`claude-opus-4-8` for A/B/C, `claude-sonnet-4-6` for the digest, since 2026-07-22). The pin
+held the model still, which was its purpose, and let it fall two generations behind the
+trader Hermes profile's own gateway with nothing on any surface saying so. It now runs
+`codex exec` with the profile's primary model, read at run time by `scripts/trader_model.py`;
+the profile's config is the one place the choice is made. `TRADER_MODEL` overrides it for
+one run.
+
+**The guard had to move first.** "The review cannot trade" was `--allowedTools`, a flag of
+one CLI. It now holds at two points that do not depend on which CLI runs: the proxy's
+`--read-only` mode (the job's only route to Robinhood) and codex's `enabled_tools`, which
+hides every other tool from the model. Both were verified live before being relied on;
+`scripts/codex_args.py` records how.
+
+**What is not shared with the profile.** Only the provider and model. codex has one
+provider, so the review has no fallback chain: an outage of the primary fails that day's
+review and alerts. codex keeps its own login under `CODEX_HOME`, separate from the
+gateway's credentials. The review stays off the gateway itself because a fallback would
+change the model behind the signals without anyone choosing it.
+
+**What changes in the numbers.** codex reports tokens but no cost, so usage rows carry
+`provider` and `model` and the control plane prices them. Prompts A/B/C were written
+against Claude; the first codex runs are diffed against a Claude run of the same date
+before the switch is trusted.
+
