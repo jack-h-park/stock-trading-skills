@@ -24,9 +24,16 @@ relied on:
     a host. So A/B/C still cannot commit or race on the index, and nothing in a
     job can reach Robinhood except through the proxy. MCP servers are separate
     processes outside the sandbox, which is how the proxy reaches the network.
-  * CONFIG. `--ignore-user-config` keeps the runtime user's ~/.codex/config.toml
+  * CONFIG. `--ignore-user-config` keeps the runtime user's codex config
     (models, MCP servers of its own) out of the review; auth still comes from
-    CODEX_HOME. `--ephemeral` keeps no session files.
+    CODEX_HOME, which run-review.sh points at a directory Hermes never reads.
+    `--ephemeral` keeps no session files.
+  * AUTH. The review cannot borrow the trader profile's Codex token. codex's
+    `login --with-access-token` accepts only an agent-identity JWT and rejected
+    the profile's ChatGPT access token ("agent identity JWT payload is not valid
+    JSON"), and `exec` does not read CODEX_ACCESS_TOKEN (401, no bearer). Sharing
+    the refresh token instead is what Hermes is built to avoid. So the review
+    holds its own session on the same account, as each Hermes profile does.
 
 Usage (one argument per output line, for a bash `while read` loop):
 

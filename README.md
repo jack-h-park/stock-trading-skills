@@ -153,9 +153,14 @@ rather than in the runtime. The job is created **paused** — installing is not 
 > `telegram:<chat_id>:<thread_id>` — can be chosen without that id living in this
 > public repo. The argument wins when both are set.
 
-> **Login.** The review runs `codex exec`, which uses codex's own ChatGPT login,
-> kept under `CODEX_HOME` for the account the job runs as. Check it with
-> `codex login status` as that account; "Not logged in" fails every job with a 401.
+> **Login.** The review runs `codex exec` with its own ChatGPT session, kept in
+> `~/.codex-trader-review` (`TRADER_CODEX_HOME`), never `~/.codex`: Hermes adopts
+> a login it finds in `~/.codex` when a profile's own credential breaks, and two
+> programs on one refresh-token family log each other out. Sign in once, as the
+> account the job runs as:
+> `CODEX_HOME=~/.codex-trader-review codex login --device-auth`, and check with
+> `CODEX_HOME=~/.codex-trader-review codex login status`. "Not logged in" fails
+> every job with a 401.
 > The model is the trader Hermes profile's primary (`scripts/trader_model.py`); set
 > `TRADER_MODEL` to override it for one run.
 

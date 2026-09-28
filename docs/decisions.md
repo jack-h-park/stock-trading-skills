@@ -370,8 +370,12 @@ hides every other tool from the model. Both were verified live before being reli
 
 **What is not shared with the profile.** Only the provider and model. codex has one
 provider, so the review has no fallback chain: an outage of the primary fails that day's
-review and alerts. codex keeps its own login under `CODEX_HOME`, separate from the
-gateway's credentials. The review stays off the gateway itself because a fallback would
+review and alerts. The login is its own session on the same ChatGPT account, kept in
+`~/.codex-trader-review`. Borrowing the profile's token was tried and is not possible:
+codex accepts an injected token only as an agent-identity JWT, and a shared refresh token
+would let whichever program refreshes first log the other out. The directory is not
+`~/.codex` because Hermes adopts a login it finds there when a profile's credential
+breaks, which would put two programs on one token family. The review stays off the gateway itself because a fallback would
 change the model behind the signals without anyone choosing it.
 
 **What changes in the numbers.** codex reports tokens but no cost, so usage rows carry

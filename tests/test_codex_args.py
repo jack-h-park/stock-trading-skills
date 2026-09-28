@@ -151,3 +151,22 @@ def test_cli_prints_one_argument_per_line():
         check=True,
     ).stdout.splitlines()
     assert out == ca.build(READ)
+
+
+def test_review_keeps_its_codex_login_out_of_the_directory_hermes_adopts_from():
+    """Hermes adopts a Codex login it finds in ~/.codex when a profile's own breaks.
+
+    Two programs on one refresh-token family log each other out, so the review's
+    login must live somewhere Hermes never reads. Resolved with bash, not a regex,
+    so a default that expands to ~/.codex is caught too.
+    """
+    script = (REPO / "scripts" / "run-review.sh").read_text()
+    line = next(x for x in script.splitlines() if x.startswith("export CODEX_HOME="))
+    resolved = subprocess.run(
+        ["bash", "-c", f'HOME=/home/t; unset TRADER_CODEX_HOME; {line}; echo "$CODEX_HOME"'],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert resolved.startswith("/home/t/")
+    assert resolved.rstrip("/") != "/home/t/.codex"

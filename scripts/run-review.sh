@@ -70,6 +70,14 @@ export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 REVIEW_RETRY_DELAYS=(20 60 150)
 
 CODEX="$(command -v codex || echo /opt/homebrew/bin/codex)"
+
+# codex keeps its login under CODEX_HOME. It must NOT be ~/.codex, the default:
+# Hermes reads ~/.codex/auth.json and, when a profile's own Codex credential
+# breaks, adopts the pair it finds there (auth.adopt_external_logins, on by
+# default). Two programs then hold one refresh-token family, and whichever
+# refreshes first logs the other out — for every profile that adopted it. A
+# directory Hermes never reads keeps this login its own session.
+export CODEX_HOME="${TRADER_CODEX_HOME:-$HOME/.codex-trader-review}"
 GIT="$(command -v git || echo /usr/bin/git)"
 PYTHON="$(command -v python3 || echo /usr/bin/python3)"
 
