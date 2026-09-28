@@ -2,7 +2,7 @@
 # trading-review-cron.sh — Hermes cron `--no-agent --script` entrypoint.
 #
 # Hermes runs this on schedule and delivers its STDOUT verbatim to the configured
-# channel (Telegram). So: run the heavy review (Claude → Robinhood/Drive, which logs
+# channel (Telegram). So: run the heavy review (codex → Robinhood/Drive, which logs
 # to its own run log and emits no stdout), then print only the short digest.
 #
 # Empty stdout = Hermes stays silent (weekend/holiday/skip). That's intentional.
@@ -89,7 +89,7 @@ STATUS="$REPO/logs/cron/${DATE_ISO}.status"
 # starts working the moment the .env gains the keys — no redeploy.
 
 # Hermes cron --script subprocesses do not inherit the profile .env, and the
-# repo's _env.sh carries only the model pins and the Claude token. Pull the two
+# repo's _env.sh carries only PATH. Pull the two
 # Discord keys out by name rather than sourcing the whole file, which would also
 # re-set TRADING_AGENT_REPO and PATH from a file this script has already resolved.
 PROFILE_ENV="${TRADER_PROFILE_ENV:-$HOME/.hermes/profiles/trader/.env}"
@@ -114,8 +114,8 @@ fi
 
 # The usage footer send_discord.py appends is computed from Hermes' session
 # store, which cannot see this job: run-review.sh spends its money in four
-# `claude -p` SUBPROCESSES, one level below the runtime that would have recorded
-# it. Sending with nothing to attribute used to produce "— no LLM · 100%
+# agent-CLI SUBPROCESSES (`claude -p` until 2026-09-28, `codex exec` since), one
+# level below the runtime that would have recorded it. Sending with nothing to attribute used to produce "— no LLM · 100%
 # deterministic" on a message that had just cost $6.49 (2026-09-09, four calls,
 # in logs/cron/<date>.run.log and in ~/.hermes/logs/trader-usage.jsonl).
 #

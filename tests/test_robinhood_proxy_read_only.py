@@ -25,7 +25,6 @@ Run: python3 -m pytest tests/test_robinhood_proxy_read_only.py
 import importlib.util
 import io
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -116,14 +115,19 @@ def test_unknown_future_tool_is_refused():
 
 
 def test_run_review_read_tools_all_pass():
-    """Every Robinhood tool the review whitelists must clear this proxy."""
-    script = (REPO / "scripts" / "run-review.sh").read_text()
-    block = re.search(r"READ_ALLOWED=\(\n(.*?)\n\)", script, re.S)
-    assert block, "READ_ALLOWED array not found in run-review.sh"
-    names = re.findall(r'"mcp__robinhood__([a-z_]+)"', block.group(1))
+    """Every Robinhood tool the review enables must clear this proxy.
+
+    The review's own list lives in scripts/codex_args.py (`enabled_tools`), and is
+    narrower than the proxy's floor; a name there that the proxy refuses would
+    break the job at the floor.
+    """
+    sys.path.insert(0, str(REPO / "scripts"))
+    import codex_args
+
+    names = list(codex_args.ROBINHOOD_READ_TOOLS)
     assert len(names) >= 5, f"expected the review's robinhood tools, got {names}"
     for name in names:
-        assert proxy.is_read_tool(name), f"run-review.sh allows {name}, proxy refuses it"
+        assert proxy.is_read_tool(name), f"the review enables {name}, proxy refuses it"
 
 
 # ── a refused call never reaches Robinhood ───────────────────────────────────
@@ -247,11 +251,19 @@ def test_default_mode_does_not_filter_the_listing(monkeypatch):
 def test_review_points_its_mcp_config_at_the_read_only_proxy():
     """The review must reach Robinhood through this script, with the flag.
 
-    A plain `"type": "http"` entry would bypass the proxy entirely, which is what
-    it did before --- the guard then lives only in the CLI's own tool whitelist
-    and does not survive a change of CLI.
+    A direct HTTP entry would bypass the proxy entirely, which is what it did
+    before --- the guard then lived only in one CLI's tool whitelist and did not
+    survive a change of CLI.
     """
+    sys.path.insert(0, str(REPO / "scripts"))
+    import codex_args
+
+    proxy_path = "/repo/scripts/mcp-robinhood-proxy.py"
+    args = codex_args.mcp_args("/py", proxy_path, "/py", "/s.py", "k", "id")
+    rh_args = next(a for a in args if a.startswith("mcp_servers.robinhood.args="))
+    assert "mcp-robinhood-proxy.py" in rh_args and '"--read-only"' in rh_args
+    assert not any(".url=" in a for a in args), "a server declared by URL bypasses the proxy"
+
     script = (REPO / "scripts" / "run-review.sh").read_text()
-    assert "mcp-robinhood-proxy.py" in script
-    assert "--read-only" in script
+    assert '--rh-proxy "$HERE/mcp-robinhood-proxy.py"' in script
     assert '"type": "http"' not in script, "review still talks straight to Robinhood"

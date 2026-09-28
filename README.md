@@ -57,8 +57,8 @@ This repo assumes you bring three things:
    |---|---|
    | `strategy/`, `config/`, `providers/*.md` | Yes — runtime-agnostic prose |
    | `SKILL.md` layout | The content does; the convention is Claude Code's |
-   | `scripts/run-review.sh` | No — it invokes `claude -p` directly |
-   | **"the scheduled run cannot trade"** | **No — it comes from `--allowedTools`** |
+   | `scripts/run-review.sh` | No — it invokes `codex exec` directly |
+   | **"the scheduled run cannot trade"** | **Partly — the read-only proxy ports; the `enabled_tools` list is codex's** |
 
    That last row is the one to read twice. The safety property this repo leans
    on is not a rule the agent is asked to obey; it is the absence of the
@@ -153,11 +153,17 @@ rather than in the runtime. The job is created **paused** — installing is not 
 > `telegram:<chat_id>:<thread_id>` — can be chosen without that id living in this
 > public repo. The argument wins when both are set.
 
-> **Keychain note (macOS).** Claude stores its OAuth token in the login Keychain,
-> which is reachable from the **GUI login session** where LaunchAgents run — not
-> from a plain `ssh` shell. `claude -p` therefore works under launchd while a bare
-> ssh test reports "Not logged in". Verify with
-> `launchctl kickstart -k gui/$(id -u)/<label>`, not over ssh.
+> **Login.** The review runs `codex exec` with its own ChatGPT session, kept in
+> `~/.codex-trader-review` (`TRADER_CODEX_HOME`), never `~/.codex`: Hermes adopts
+> a login it finds in `~/.codex` when a profile's own credential breaks, and two
+> programs on one refresh-token family log each other out. Sign in once, as the
+> account the job runs as:
+> `mkdir -m 700 -p ~/.codex-trader-review` (codex refuses a CODEX_HOME that does not exist), then
+> `CODEX_HOME=~/.codex-trader-review codex login --device-auth`, and check with
+> `CODEX_HOME=~/.codex-trader-review codex login status`. "Not logged in" fails
+> every job with a 401.
+> The model is the trader Hermes profile's primary (`scripts/trader_model.py`); set
+> `TRADER_MODEL` to override it for one run.
 
 ```bash
 FORCE=1 bash scripts/run-review.sh    # run once now, bypassing the market-day guard
@@ -166,10 +172,11 @@ cat logs/cron/$(date +%F).run.log     # what it did
 
 ## Safety
 
-- **The scheduled job cannot trade.** `place_equity_order` and
-  `cancel_equity_order` are absent from the runner's `--allowedTools` whitelist,
-  so this is a structural property rather than an instruction the agent is asked
-  to respect.
+- **The scheduled job cannot trade.** It reaches Robinhood only through
+  `scripts/mcp-robinhood-proxy.py --read-only`, which refuses every write, and
+  codex shows it only the seven read tools named in `scripts/codex_args.py`. Its
+  shell runs sandboxed with no network and no write access to `.git`. This is a
+  structural property rather than an instruction the agent is asked to respect.
 - **Every live order is confirmed** unless `config/guardrails.md` grants standing
   authorisation for a narrow, explicitly bounded case.
 - **Nothing is accumulated locally.** The broker is the source of truth and is
