@@ -44,8 +44,10 @@ Only trade these symbols. Anything else requires explicit user instruction.
 ## Entry rules
 
 - **Buy-the-dip accumulation.** Place a **$100 notional market buy** (regular hours) when a
-  universe symbol trades **≥ 5% below its trailing 20-day high** (use `historicals` to
-  compute the 20-day high). Notional orders must be `type=market` — see the order-mechanics
+  universe symbol trades **≥ 5% below its trailing 20-day high**: the highest intraday
+  high of the **20 completed regular sessions before** the session of the price used — today
+  is never part of its own window. The scheduled review reads it from
+  `scripts/signal_windows.py` rather than counting bars itself. Notional orders must be `type=market` — see the order-mechanics
   note below.
 - **Pace:** at most **1 add per symbol per calendar week**, where a week runs **Monday
   through Sunday** in US market time.
