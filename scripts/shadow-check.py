@@ -62,6 +62,20 @@ TOLERANCE_PCT = 0.0015
 TOLERANCE_MIN = 0.05
 
 
+# How long an unverified session is carried before it is closed as unverifiable.
+#
+# A decision checked the morning after can find no settled close yet: the refresh
+# that stores it runs on its own clock. The check used to run once per record, and
+# latest.txt is written only when something is wrong, so a session that could not
+# be verified said so once and then left the message the next day — the reader,
+# seeing the warning stop, took it as resolved. On 2026-09-23 the whole 09-22
+# session was "no-settled-row", and nothing ever said whether it later checked
+# out. Carrying it means a later run re-checks it and says which way it went.
+# Ten days covers a long weekend plus a refresh outage of a week; past that the
+# row is not coming and saying so once is the honest end.
+MAX_CARRY_DAYS = 10
+
+
 def tolerance_for(price: float) -> float:
     return max(TOLERANCE_MIN, abs(float(price)) * TOLERANCE_PCT)
 
@@ -108,6 +122,96 @@ def check(record: dict[str, Any], db_path: str) -> list[dict[str, Any]]:
     return findings
 
 
+def read_ledger(ledger: Path) -> list[dict[str, Any]]:
+    if not ledger.exists():
+        return []
+    out = []
+    for line in ledger.read_text().splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def unverified_dates(entries: list[dict[str, Any]]) -> list[str]:
+    """Review dates whose most recent ledger entry still has a no-settled-row and
+    has not been closed as unverifiable. Latest entry wins, so a recheck that
+    resolved a date takes it off the list."""
+    latest: dict[str, dict[str, Any]] = {}
+    for e in entries:
+        if e.get("date"):
+            latest[e["date"]] = e
+    return sorted(
+        d for d, e in latest.items()
+        if not e.get("abandoned")
+        and any(f.get("verdict") == "no-settled-row" for f in e.get("findings") or [])
+    )
+
+
+def ledger_entry(record: dict[str, Any], findings: list[dict[str, Any]],
+                 **extra: Any) -> dict[str, Any]:
+    auto = [d for d in (record.get("decisions") or []) if d.get("autoEligible")]
+    entry = {
+        "checkedAt": datetime.datetime.now().replace(microsecond=0).isoformat(),
+        "date": record.get("date"),
+        "targetSession": record.get("targetSession"),
+        "priceAsOf": record.get("priceAsOf"),
+        "autoEligibleCount": len(auto),
+        # Carried so the ledger can answer "which threshold keeps being read
+        # past, in which direction, and why" from a record instead of from
+        # memory. A threshold departed from repeatedly and consistently is set
+        # to the wrong number; one never departed from is working.
+        "departures": record.get("departures") or [],
+        "autoEligible": [{"side": d.get("side"), "symbol": d.get("symbol"),
+                          "notional": d.get("notional")} for d in auto],
+        "findings": findings,
+    }
+    entry.update(extra)
+    return entry
+
+
+def recheck(reviews: Path, entries: list[dict[str, Any]], db_path: str,
+            skip: str | None, today: datetime.date) -> tuple[list[dict[str, Any]], list[str]]:
+    """Re-check every carried unverified session. Returns new ledger entries and
+    the lines to print — one per carried session, every run, until it closes."""
+    new_entries: list[dict[str, Any]] = []
+    lines: list[str] = []
+    for date in unverified_dates(entries):
+        if date == skip:
+            continue  # the newest record is checked by the main path this run
+        path = reviews / f"{date}.decisions.json"
+        if not path.exists():
+            continue
+        record = json.loads(path.read_text())
+        findings = check(record, db_path)
+        missing = [f["symbol"] for f in findings if f["verdict"] == "no-settled-row"]
+        mismatched = [f for f in findings if f["verdict"] not in ("ok", "no-settled-row")]
+        try:
+            age = (today - datetime.date.fromisoformat(date)).days
+        except ValueError:
+            age = 0
+        abandoned = bool(missing) and age > MAX_CARRY_DAYS
+        new_entries.append(ledger_entry(record, findings, recheck=True,
+                                        **({"abandoned": True} if abandoned else {})))
+        if mismatched:
+            for f in mismatched:
+                lines.append("  ! {} (from {}) {}: used {}, settled {} (delta {})".format(
+                    f.get("symbol"), date, f["verdict"], f.get("priceUsed"),
+                    f.get("settledClose"), f.get("delta")))
+        if abandoned:
+            lines.append(f"  x {date}: never verified — no settled close for "
+                         f"{', '.join(missing)} after {age} days; no longer carried")
+        elif missing:
+            lines.append(f"  ~ {date}: still unverified — no settled close yet for "
+                         f"{', '.join(missing)} ({age} days)")
+        elif not mismatched:
+            n = len(findings)
+            lines.append(f"  = {date}: now verified — {n} price{'s' if n != 1 else ''}"
+                         " match the settled close")
+    return new_entries, lines
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", help="review date to check (default: the newest record)")
@@ -139,27 +243,22 @@ def main() -> int:
 
     ledger = Path(args.repo) / "logs" / "shadow" / "ledger.jsonl"
     ledger.parent.mkdir(parents=True, exist_ok=True)
+    prior = read_ledger(ledger)
+    carried, carried_lines = recheck(reviews, prior, args.db, record.get("date"),
+                                     datetime.date.today())
     with ledger.open("a") as fh:
-        fh.write(json.dumps({
-            "checkedAt": datetime.datetime.now().replace(microsecond=0).isoformat(),
-            "date": record.get("date"),
-            "targetSession": record.get("targetSession"),
-            "priceAsOf": record.get("priceAsOf"),
-            "autoEligibleCount": len(auto),
-            # Carried so the ledger can answer "which threshold keeps being read
-            # past, in which direction, and why" from a record instead of from
-            # memory. A threshold departed from repeatedly and consistently is set
-            # to the wrong number; one never departed from is working.
-            "departures": record.get("departures") or [],
-            "autoEligible": [{"side": d.get("side"), "symbol": d.get("symbol"),
-                              "notional": d.get("notional")} for d in auto],
-            "findings": findings,
-        }, ensure_ascii=False) + "\n")
+        for e in carried:
+            fh.write(json.dumps(e, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(ledger_entry(record, findings), ensure_ascii=False) + "\n")
 
     # Departures are recorded, not alarmed on: they are the expected output of a
     # judgement call, and printing them every session would bury the price
     # mismatches this check exists for. Read them from the ledger.
+    if args.quiet and not bad and not carried_lines:
+        return 0
     if args.quiet and not bad:
+        print("shadow-check: earlier sessions")
+        print("\n".join(carried_lines))
         return 0
 
     departures = record.get("departures") or []
@@ -180,6 +279,9 @@ def main() -> int:
             )
         )
         print("  ! {} {}: {}".format(f.get("symbol"), f["verdict"], detail))
+    if carried_lines:
+        print("shadow-check: earlier sessions")
+        print("\n".join(carried_lines))
     return 0
 
 
