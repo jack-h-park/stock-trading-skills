@@ -207,8 +207,8 @@ def recheck(reviews: Path, entries: list[dict[str, Any]], db_path: str,
                          f"{', '.join(missing)} ({age} days)")
         elif not mismatched:
             n = len(findings)
-            lines.append(f"  = {date}: now verified — {n} price{'s' if n != 1 else ''}"
-                         " match the settled close")
+            match = "prices match" if n != 1 else "price matches"
+            lines.append(f"  = {date}: now verified — {n} {match} the settled close")
     return new_entries, lines
 
 

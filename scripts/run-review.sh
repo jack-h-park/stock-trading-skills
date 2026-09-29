@@ -230,15 +230,19 @@ CRITICAL_RO="CRITICAL: This is READ-ONLY. Do NOT place or cancel any orders unde
 PRICE_BASIS="PRICE BASIS: every signal, drawdown, take-profit, stop-loss, sleeve value and priceUsed in this job is computed from the REGULAR session only. From get_equity_quotes use quote.last_trade_price — the last regular-session trade, which is that session's close once 13:00 PT has passed — and NEVER quote.last_non_reg_trade_price, even though the tool's own guidance says to prefer whichever is more recent. Extended-hours and overnight prints may be mentioned as context and are never an input. Set priceAsOf to the date of that regular session."
 
 # ── Job A — Agentic BUY/TRIM signals + review ────────────────────────────────
+# The 20-day high is computed in code (scripts/signal_windows.py), not by the model:
+# on consecutive days the model counted today into the window and then left it out. The
+# file is written just before the jobs start; the prompt names it here.
+SIGNALS_FILE="logs/reviews/${TODAY}.signals.json"
 PROMPT_A="You are running the scheduled, READ-ONLY portfolio-review for this repo's Robinhood Agentic trading account. Today is ${TODAY}. Produce ONLY the Agentic signals report — reconcile and the cross-account overview are handled by other jobs; do not do them here.
 
 Steps:
 1. Read strategy/policy.md, config/guardrails.md, config/trim-policy.md, providers/robinhood/adapter.md, providers/robinhood/capabilities.md, and skills/portfolio-review/SKILL.md + skills/log/SKILL.md.
 2. Using the Robinhood MCP (tools are prefixed mcp__robinhood__), for the Agentic account in the adapter: get_portfolio and get_equity_positions; get_equity_quotes and get_equity_historicals (interval=day, last ~30 days) for the universe symbols in policy.md.
-3. BUY SIGNALS — Compute each universe symbol's trailing 20-trading-day high and its drawdown vs the latest price. Flag a BUY signal when price is >= 5% below the 20-day high, per policy.md entry rules.
+3. BUY SIGNALS — Read ${SIGNALS_FILE}. It carries, for each universe symbol, the 20-day high, the date of that high, the window's first and last session, the price and the drawdown, computed in code under one definition: the 20 most recent COMPLETED regular sessions before the session of the price used (today's session is never part of its own window), and the highest intraday high among those 20 daily bars. Use those numbers as they are; do not recompute them. In the report, show each symbol's window as <windowStart>..<windowEnd> and the high's date beside the high. If the file is missing, or a symbol is absent or carries an error, compute that symbol yourself under exactly the same definition and say in the report that you did. Flag a BUY signal when drawdownPct is >= 5, per policy.md entry rules.
 3b. TRIM SIGNALS — For each symbol with an open position in the Agentic account, check the trim conditions from config/trim-policy.md:
     a. Skip if: position market value < minimum, kill-switch active, position was opened < 3 calendar days ago, or a stop-loss/take-profit signal already applies (use the stronger exit).
-    b. Compute the 20-day high (same historicals data from step 2). If current price ≤ (20-day high × (1 − threshold)), flag a TRIM signal.
+    b. Use the same 20-day high from ${SIGNALS_FILE} (step 3). If current price ≤ (20-day high × (1 − threshold)), flag a TRIM signal.
     c. For each TRIM signal: compute shares to sell (50% of held shares, rounded DOWN to 6 decimal places — fractional is allowed and there is NO whole-share minimum; every universe symbol trades above \$100 so a whole-share rule would round every real position to zero), estimated proceeds (shares × current price), and which currently-open positions qualify as REDISTRIBUTE recipients (return-since-purchase > portfolio-average return, symbol in universe).
     d. Compute REDISTRIBUTE allocation: split proceeds equally among recipients, rounded to whole dollars; if no recipients, mark proceeds as 'held as cash'; if any allocation < minimum, drop the lowest outperformer and recompute.
     e. Show all numbers explicitly so the proposal is fully auditable: symbol, 20-day high, current price, drawdown %, shares to sell, estimated proceeds, redistribute-to list with dollar amounts.
@@ -348,6 +352,10 @@ if [ -s "$SHADOW_OUT" ]; then
 fi
 
 echo "----- launching parallel jobs A/B/C $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
+mkdir -p "$REPO/logs/reviews"
+"$PYTHON" "$HERE/signal_windows.py" --repo "$REPO" --python "$PYTHON" \
+  --proxy "$HERE/mcp-robinhood-proxy.py" --out "$REPO/$SIGNALS_FILE" 2>>"$RUNLOG" || true
+[ -s "$REPO/$SIGNALS_FILE" ] || echo "signal_windows: no file — job A computes the 20-day high itself" >> "$RUNLOG"
 run_job "$PROMPT_A" "$TMP_A_EVENTS" "$TMP_A_ERR" A & PID_A=$!
 run_job "$PROMPT_B" "$TMP_B_EVENTS" "$TMP_B_ERR" B & PID_B=$!
 run_job "$PROMPT_C" "$TMP_C_EVENTS" "$TMP_C_ERR" C & PID_C=$!

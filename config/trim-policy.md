@@ -9,7 +9,7 @@ up the new values automatically. No code changes required.
 | Parameter | Value | Notes |
 |-----------|-------|-------|
 | Drawdown threshold | **10%** below recent high | If current price ≤ (recent high × 0.90), flag TRIM |
-| Recent-high lookback | **20 trading days** | Same window as BUY signal; use `historicals interval=day` |
+| Recent-high lookback | **20 trading days** | Same window as BUY signal: the 20 completed sessions before today (`scripts/signal_windows.py`) |
 | Trim size | **50%** of current shares held | Fractional allowed — round down to **6 decimal places** |
 | Minimum position value | **$150** | Skip TRIM if current market value < this (not worth the friction) |
 | Applies to accounts | **Agentic only** (`<AGENTIC_ACCOUNT>`) | Same scope as all other automated signals |
