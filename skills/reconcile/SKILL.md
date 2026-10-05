@@ -42,8 +42,14 @@ the other, and the Agentic account is exactly that case.
    - In Robinhood, not in sheet → **MISSING FROM SHEET** (new position).
    - In sheet, not in Robinhood → **STALE IN SHEET** (sold/transferred?).
    - Both present: compare quantity and average cost against the thresholds in the config.
-   - Quantity differs but average cost identical → **VERIFY SHEET ENTRY** (likely typo).
-5. Classify each finding as **ALERT** or **NOISE** per the config thresholds.
+     For every symbol whose quantity differs, get its regular-session `last_trade_price`
+     from `get_equity_quotes` and value the gap in dollars; the ALERT/NOISE line is a
+     dollar figure, not a share count.
+   - Quantity differs by ≥ 1 whole share but average cost identical → **VERIFY SHEET ENTRY**
+     (likely typo). A sub-share gap at an identical average cost is a reinvestment, not a
+     typo: classify it by its dollar value like any other gap.
+5. Classify each finding as **ALERT** or **NOISE** per the config thresholds, and write the
+   gap's dollar value beside every quantity finding, alert or noise.
 
 ## Steps — B. Trade-log check
 
