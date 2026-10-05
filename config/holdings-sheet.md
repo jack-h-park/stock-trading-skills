@@ -35,14 +35,26 @@ its filled orders against `logs/trades/`. Say both halves whenever you report th
 
 **ALERT (surface prominently):**
 - A position present in Robinhood but missing from the sheet (or vice versa).
-- Share quantity differs by **≥ 1 whole share** or **≥ 1%**, whichever is smaller.
+- The quantity gap is worth **≥ $50**: |Robinhood quantity − sheet quantity| × price, where
+  price is the regular-session `last_trade_price` from `get_equity_quotes` (the review's
+  PRICE_BASIS), or the Robinhood average cost when no quote comes back. Name the dollar
+  figure in the finding.
 - Average cost differs by **> 1%**.
-- Quantity differs while average cost is **identical** → likely a sheet data-entry error;
-  flag as "verify sheet entry".
+- Quantity differs by **≥ 1 whole share** while average cost is **identical** → likely a sheet
+  data-entry error; flag as "verify sheet entry" whatever the dollar value.
 
 **NOISE (list separately as low-priority, or omit):**
-- Sub-share fractional quantity drift with ~unchanged average cost (dividend reinvestment).
+- A quantity gap worth **< $50** with average cost within 1% — dividend reinvestment and
+  fractional adds. It is not lost: the gap is measured against the sheet every day, so
+  reinvestments that accumulate past $50 become an ALERT on their own.
 - Average cost difference < ~$0.20 (rounding).
+
+Why a dollar line instead of "1 whole share or 1%, whichever is smaller" (changed
+2026-10-05): on a small position 1% is a fraction of a share, so a month of reinvested
+distributions alerted every day — QDVO, 10.8 shares, crossed 1% at 0.2 share, about $6.
+And "quantity differs, average cost identical" also describes a reinvested fraction, so the
+same 0.02-share AVGO gap (about $7) was classed as noise under one model and as "verify
+sheet entry" under the next. A typo is a whole-share error; a reinvestment is a fraction.
 
 ## Notes
 
