@@ -6,7 +6,15 @@
 # to its own run log and emits no stdout), then print only the short digest.
 #
 # Empty stdout = Hermes stays silent (weekend/holiday/skip). That's intentional.
-# Non-empty stdout on failure = Hermes delivers the error alert to Telegram.
+#
+# Exit codes. A run that did not produce the review exits 1; everything else
+# exits 0. This used to exit 0 on failure too, on the reasoning that stdout is the
+# delivery channel and a nonzero exit becomes a bare "Cron failed" error. Neither
+# half holds: Hermes delivers a failing no-agent script's stdout as well (under a
+# "script failed" heading, with the exit code), and exit 0 recorded every failure
+# as last_status=ok — which is all cron-health-watchdog reads. On 2026-10-05 and
+# 10-06 the review failed both days and the fleet's failure watch saw two healthy
+# runs; the only trace was a trader-topic message saying "see the run log".
 #
 # Installed to ~/.hermes/profiles/trader/scripts/ by scripts/hermes/install-cron.sh.
 # The trading repo location is resolved via $TRADING_AGENT_REPO (default below).
@@ -36,11 +44,10 @@ unset _d
 # call above could not find its script, exited nonzero, and (stderr discarded
 # back then) was read as "not a trading day" — so the review silently did not run
 # and the Telegram message said the market was closed on an ordinary Wednesday.
-# Alert on stdout and exit 0: stdout is this script's delivery channel, so the
-# reason reaches Jack instead of becoming a bare "Cron failed" wrapper error.
+# Alert on stdout and exit nonzero — see "Exit codes" below.
 if [ ! -d "$REPO" ]; then
   echo "⚠️ trading-review $DATE_ISO: configured repo does not exist at $REPO — review did not run. Set TRADING_AGENT_REPO in the trader profile .env to the current checkout path."
-  exit 0
+  exit 1
 fi
 
 # Skip on non-NYSE trading days and notify so the skip is visible in Telegram.
@@ -68,11 +75,14 @@ if [ "$MARKET_CHECK_RC" -ne 0 ]; then
 fi
 rm -f "$MARKET_CHECK_ERR"
 
-[ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: runner not found at $RUNNER — review did not run."; exit 0; }
+[ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: runner not found at $RUNNER — review did not run."; exit 1; }
 
 # Run the review+reconcile. It self-logs to logs/cron/<date>.run.log and emits no
-# stdout of its own; on weekends it skips and writes no digest.
-bash "$RUNNER"
+# stdout of its own; on weekends it skips and writes no digest. Its stderr goes to
+# that log too: Hermes shows a script's stderr only when the script exits nonzero,
+# so anything the runner said there before it redirected itself was lost.
+mkdir -p "$REPO/logs/cron"
+bash "$RUNNER" 2>>"$RUNLOG"
 RC=$?
 
 DIGEST="$REPO/logs/digest/${DATE_ISO}.md"
@@ -147,20 +157,30 @@ deliver_agentic() {
 # tail of the run log instead lands on the LAST job's result JSON — normally the
 # digest step, which usually succeeds — so the alert used to announce a failure
 # while quoting a success payload.
+#
+# Phases that failed for the same reason are named together: when the model is
+# the problem, all three jobs say the same sentence, and three copies of it
+# pushed the one fact that mattered off a phone screen.
 if [ "$RC" -ne 0 ]; then
-  NAMES="A=signals B=reconcile C=overview D=digest"
-  FAILED=""
-  while read -r lbl prc reason; do
-    [ -z "${lbl:-}" ] && continue
-    [ "${prc:-0}" -eq 0 ] 2>/dev/null && continue
-    for pair in $NAMES; do
-      [ "${pair%%=*}" = "$lbl" ] && lbl="${pair#*=}" && break
-    done
-    FAILED="${FAILED:+$FAILED; }${lbl} — ${reason}"
-  done < "$STATUS" 2>/dev/null
+  FAILED="$(awk '
+    BEGIN { split("A=signals B=reconcile C=overview D=digest P=preflight", p, " ")
+            for (i in p) { split(p[i], kv, "="); name[kv[1]] = kv[2] } }
+    NF >= 2 && $2 != "0" {
+      lbl = ($1 in name) ? name[$1] : $1
+      why = $0; sub(/^[^ ]+ [^ ]+ ?/, "", why); if (why == "") why = "failed without a message"
+      if (!(why in seen)) { order[++n] = why; seen[why] = lbl } else seen[why] = seen[why] "+" lbl
+    }
+    END { for (i = 1; i <= n; i++) printf "%s%s — %s", (i > 1 ? "; " : ""), seen[order[i]], order[i] }
+  ' "$STATUS" 2>/dev/null)"
 
+  # No status file means the runner died before it could write one. Quote the
+  # last error line this run left in its log rather than pointing at the file:
+  # the reader is on a phone and the log is on the ops host.
   if [ -z "$FAILED" ]; then
-    FAILED="see logs/cron/${DATE_ISO}.run.log"
+    LAST_ERR="$(awk '/^===== run-review start/ { line = "" }
+                     /ERROR|unbound variable|command not found|syntax error|No such file/ { line = $0 }
+                     END { print line }' "$RUNLOG" 2>/dev/null | cut -c1-300)"
+    FAILED="${LAST_ERR:-no error line in logs/cron/${DATE_ISO}.run.log}"
   fi
 
   # A partial failure still leaves real work on disk. Suppressing the digest
@@ -175,7 +195,7 @@ if [ "$RC" -ne 0 ]; then
   else
     echo "⚠️ trading-review FAILED $DATE_ISO (rc=$RC) — ${FAILED}"
   fi
-  exit 0
+  exit 1
 fi
 
 # Actionable proposals to Discord; the read-only cross-account digest is this
