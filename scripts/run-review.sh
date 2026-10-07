@@ -118,6 +118,34 @@ _log_trader_usage() { # $1=job $2=events.jsonl $3=model
 
 echo "===== run-review start $NOW =====" >> "$RUNLOG"
 
+# This script's own stderr goes to the run log from here on. A shell-level abort
+# (`set -u` meeting an unescaped `$2` in a prompt, a missing command) prints its
+# reason on stderr and nowhere else, and the cron wrapper does not keep stderr —
+# so on 2026-10-05 and 10-06 the run died between the merge and the digest with
+# "$2: unbound variable" recorded by nothing, and the alert could only say "see
+# the run log", which held no error either.
+exec 2>>"$RUNLOG"
+
+# The per-phase outcome the cron wrapper reads (written in full at the end). A
+# file left by an earlier run today would be read as this run's, so start clean.
+STATUS_FILE="$REPO/logs/cron/${TODAY}.status"
+rm -f "$STATUS_FILE"
+
+# A run that exits early never reaches the per-phase status block at the bottom,
+# which left the wrapper nothing to quote. Whatever ended the run, leave one line
+# saying so: the last error line THIS run wrote (the log is per day and appends,
+# hence the reset on each start marker).
+_write_abort_status() { # $1=exit code
+  [ "$1" -eq 0 ] && return 0
+  [ -s "$STATUS_FILE" ] && return 0
+  local why
+  why="$(awk '/^===== run-review start/ { line = "" }
+              /ERROR|unbound variable|command not found|syntax error|No such file/ { line = $0 }
+              END { print line }' "$RUNLOG" 2>/dev/null | cut -c1-300)"
+  echo "run $1 aborted before the phase results were recorded — ${why:-no error line in the run log}" > "$STATUS_FILE"
+}
+trap '_write_abort_status $?' EXIT
+
 # The model: the trader profile's primary, unless TRADER_MODEL overrides it for a
 # manual step-down. An unreadable or non-codex profile stops the run here with
 # one log line, rather than four jobs each failing on a model codex cannot serve.
@@ -187,7 +215,12 @@ while IFS= read -r a; do READ_ARGS+=("$a"); done < <(
     --sa-key "$GCP_SA_KEY" --sheet-id "$HOLDINGS_SHEET_ID" 2>>"$RUNLOG")
 while IFS= read -r a; do DIGEST_ARGS+=("$a"); done < <(
   "$PYTHON" "$HERE/codex_args.py" digest --model "$TRADER_DIGEST_MODEL" --repo "$REPO" 2>>"$RUNLOG")
-if [ "${#READ_ARGS[@]}" -eq 0 ] || [ "${#DIGEST_ARGS[@]}" -eq 0 ]; then
+# The preflight below asks the jobs' model through the digest's envelope (no MCP
+# server), so it costs one short turn and checks the model rather than the tools.
+PREFLIGHT_ARGS=()
+while IFS= read -r a; do PREFLIGHT_ARGS+=("$a"); done < <(
+  "$PYTHON" "$HERE/codex_args.py" digest --model "$TRADER_MODEL" --repo "$REPO" 2>>"$RUNLOG")
+if [ "${#READ_ARGS[@]}" -eq 0 ] || [ "${#DIGEST_ARGS[@]}" -eq 0 ] || [ "${#PREFLIGHT_ARGS[@]}" -eq 0 ]; then
   echo "ERROR: could not build the codex arguments — aborting" >> "$RUNLOG"
   exit 1
 fi
@@ -197,7 +230,9 @@ TMP_A_EVENTS="/tmp/trading-review-A-$$.jsonl"; TMP_A_ERR="/tmp/trading-review-A-
 TMP_B_EVENTS="/tmp/trading-review-B-$$.jsonl"; TMP_B_ERR="/tmp/trading-review-B-$$.err"
 TMP_C_EVENTS="/tmp/trading-review-C-$$.jsonl"; TMP_C_ERR="/tmp/trading-review-C-$$.err"
 TMP_D_EVENTS="/tmp/trading-review-D-$$.jsonl"; TMP_D_ERR="/tmp/trading-review-D-$$.err"
-trap 'rm -f "$TMP_A_EVENTS" "$TMP_A_ERR" "$TMP_B_EVENTS" "$TMP_B_ERR" "$TMP_C_EVENTS" "$TMP_C_ERR" "$TMP_D_EVENTS" "$TMP_D_ERR"' EXIT
+TMP_P_EVENTS="/tmp/trading-review-P-$$.jsonl"; TMP_P_ERR="/tmp/trading-review-P-$$.err"
+# $? is read first: the cleanup must not replace the exit code the abort status reports.
+trap '_rc=$?; rm -f "$TMP_A_EVENTS" "$TMP_A_ERR" "$TMP_B_EVENTS" "$TMP_B_ERR" "$TMP_C_EVENTS" "$TMP_C_ERR" "$TMP_D_EVENTS" "$TMP_D_ERR" "$TMP_P_EVENTS" "$TMP_P_ERR"; _write_abort_status "$_rc"' EXIT
 
 # Skip US market holidays / weekends cheaply: launchd already restricts to Mon-Fri,
 # but skip if it's a weekend for any manual run. (Holiday skipping is left to the
@@ -311,12 +346,14 @@ _is_retryable() { # $1=events.jsonl
   "$PYTHON" "$HERE/codex_result.py" retryable "$1"
 }
 
-_run_with_retry() { # $1=prompt $2=events.jsonl $3=errfile $4=label $5=digest|read
+_run_with_retry() { # $1=prompt $2=events.jsonl $3=errfile $4=label $5=digest|read|preflight
   local attempt=1 rc delay
   while : ; do
     # stdin is closed on purpose: codex reads a piped stdin as more prompt.
     if [ "$5" = "digest" ]; then
       "$CODEX" "${DIGEST_ARGS[@]}" "$1" < /dev/null > "$2" 2> "$3"
+    elif [ "$5" = "preflight" ]; then
+      "$CODEX" "${PREFLIGHT_ARGS[@]}" "$1" < /dev/null > "$2" 2> "$3"
     else
       "$CODEX" "${READ_ARGS[@]}" "$1" < /dev/null > "$2" 2> "$3"
     fi
@@ -335,6 +372,29 @@ _run_with_retry() { # $1=prompt $2=events.jsonl $3=errfile $4=label $5=digest|re
 run_job() { # $1=prompt  $2=events.jsonl  $3=errfile  $4=label
   _run_with_retry "$1" "$2" "$3" "$4" read
 }
+
+# ── Preflight: can codex serve the model at all? ──────────────────────────────
+# One short call (the jobs' model, the same login, no MCP server) before three
+# long ones. The model comes from the trader profile, which the
+# fleet bumps for its own gateway; this CLI is a separate client with its own
+# list of the models it can serve. On 2026-10-05 the profile moved to
+# gpt-6.1-sol, codex 0.156 answered every call with 400 "model is not supported
+# when using Codex with a ChatGPT account", and all three jobs failed on it in
+# parallel. Said here once, with the model and the CLI version in the line, the
+# alert names the fix instead of three copies of the symptom. Transient answers
+# are retried exactly as a job's would be.
+_run_with_retry "Reply with exactly: OK" "$TMP_P_EVENTS" "$TMP_P_ERR" P preflight
+RC_P=$?
+_log_trader_usage "trading-review" "$TMP_P_EVENTS" "$TRADER_MODEL"
+if [ "$RC_P" -ne 0 ]; then
+  reason="$("$PYTHON" "$HERE/codex_result.py" reason "$TMP_P_EVENTS" 2>/dev/null)"
+  CODEX_VERSION="$("$CODEX" --version 2>/dev/null | head -1)"
+  { echo "----- preflight stderr -----"; cat "$TMP_P_ERR"; echo "----- preflight events -----"; cat "$TMP_P_EVENTS"; } >> "$RUNLOG" 2>/dev/null
+  echo "ERROR: preflight — ${CODEX_VERSION:-codex} cannot run $TRADER_MODEL: ${reason:-rc=$RC_P}" >> "$RUNLOG"
+  echo "preflight $RC_P ${CODEX_VERSION:-codex} cannot run model $TRADER_MODEL: ${reason:-no message}. Upgrade codex on this host, or set TRADER_MODEL to a model it serves." > "$STATUS_FILE"
+  exit 1
+fi
+echo "----- preflight ok: $TRADER_MODEL answers $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 
 # ── Shadow check: yesterday's decision record against what actually settled. ──
 # Runs BEFORE this session's review, not after it, and that ordering is the whole
@@ -411,7 +471,7 @@ Steps:
    - Every TRIM proposal as 'TRIM <SYM> <shares>sh (~\$<proceeds>) — <drawdown>% below 20d high' followed by 'REDISTRIBUTE → <SYM> \$<amount>, <SYM> \$<amount>' (or 'proceeds held as cash' if no recipients). If there are no TRIM signals, say so explicitly.
    - Any take-profit or stop-loss exit, with the share count and estimated proceeds.
    - UNLOGGED TRADES, when and only when the reconcile step's '## Trade-log check' section reported findings. One short section headed 'Unlogged trades:' naming each fill (date, symbol, side, shares, price) and saying plainly that the fix is to write the missing entry in logs/trades/ per skills/log/SKILL.md, reconstructing why that order was placed — not to place or cancel anything. It belongs in this message because it is a thing Jack has to DO, and it decays: the reasoning is recoverable from the session it happened in and stops being recoverable soon after. When the check is clean, write nothing about it here — the one-line clean state goes in the reference message.
-   - RECONCILE, when and only when the reconcile step found sheet drift. One short section headed 'Reconcile:' naming each alert, the account, and what to change in the holdings sheet, in exactly this form so the line can be copied into the sheet and still says what was wrong: group by account ('Long-term ••••9965: …', with the masked number from the reconcile report); for each drifted position write 'SYM → <live quantity> @ $<live average cost> (<delta>)', where <delta> is the live quantity minus the sheet quantity with a sign and 'sh' ('+3 sh', '+1.145496 sh', '−2 sh'), followed by ', avg ±$<live avg minus sheet avg>' only when the average cost differs; a live position missing from the sheet is 'add SYM <quantity> @ $<average cost>'; a sheet row with no live position is 'remove SYM (−<sheet quantity> sh)'; a row the reconcile report marks VERIFY is 'verify SYM <live quantity> (<delta>)'. Example: 'Long-term ••••9965: GOOGL → 29.015674 @ $249.36 (+1 sh, avg +$3.21); TSLA → 86 @ $347.39 (+3 sh). Mid-term ••••1478: add TSLA 2 @ $366.54; verify AVGO 11.082352 (+0.020625 sh).' Take every number from the reconcile report; never recompute a quantity or a cost. It sits here rather than in the reference message because it is the one other thing in this review that asks Jack to DO something, and that is what decides which channel a line goes to — not which account it concerns. Say plainly that fixing it means editing the sheet, not placing an order. When the sheet matches, write nothing about reconcile at all: 'no drift' is the expected state and belongs in the read-only message.
+   - RECONCILE, when and only when the reconcile step found sheet drift. One short section headed 'Reconcile:' naming each alert, the account, and what to change in the holdings sheet, in exactly this form so the line can be copied into the sheet and still says what was wrong: group by account ('Long-term ••••9965: …', with the masked number from the reconcile report); for each drifted position write 'SYM → <live quantity> @ \$<live average cost> (<delta>)', where <delta> is the live quantity minus the sheet quantity with a sign and 'sh' ('+3 sh', '+1.145496 sh', '−2 sh'), followed by ', avg ±\$<live avg minus sheet avg>' only when the average cost differs; a live position missing from the sheet is 'add SYM <quantity> @ \$<average cost>'; a sheet row with no live position is 'remove SYM (−<sheet quantity> sh)'; a row the reconcile report marks VERIFY is 'verify SYM <live quantity> (<delta>)'. Example: 'Long-term ••••9965: GOOGL → 29.015674 @ \$249.36 (+1 sh, avg +\$3.21); TSLA → 86 @ \$347.39 (+3 sh). Mid-term ••••1478: add TSLA 2 @ \$366.54; verify AVGO 11.082352 (+0.020625 sh).' Take every number from the reconcile report; never recompute a quantity or a cost. It sits here rather than in the reference message because it is the one other thing in this review that asks Jack to DO something, and that is what decides which channel a line goes to — not which account it concerns. Say plainly that fixing it means editing the sheet, not placing an order. When the sheet matches, write nothing about reconcile at all: 'no drift' is the expected state and belongs in the read-only message.
    - DEPARTURES, when and only when you departed from a threshold. Its own short section headed 'Read past a threshold:' naming the threshold and its number, what you did instead, and why, per item. Put it above the proposals it affects. Jack is reading the reasoning here, not checking arithmetic, so give him the one sentence that would let him disagree — and say plainly that a departed item is not auto-eligible and needs his confirmation either way.
    - DECISION REQUESTED, when and only when the review raised one. Its own section headed 'Decision needed:' naming the symbol, both readings with their numbers, and that nothing on that symbol executes either way until Jack rules. Lead with this above the proposals: it is the only item in the message where his answer carries information the rules do not already have — everything else is arithmetic he is being asked to countersign. Say that the answer is recorded and will not be asked again.
    - SHADOW CHECK, when and only when logs/shadow/latest.txt is non-empty. One short section headed 'Shadow check:' carrying what it says. That file is only written when a decision this review made yesterday disagrees with what the market settled at, which means the price a rule acted on was not the price — the fault class that confirm-before-place hides because a person reads the number. It also carries earlier sessions that could not be checked because no settled close was stored yet: a '~ still unverified' line repeats every session until the close arrives, '= now verified' or a mismatch line reports how it resolved, and 'x never verified' closes it. Report those lines as they stand; never drop a still-unverified session because it is not new. It belongs in this message because it is evidence about whether these proposals can ever be trusted to place themselves.
@@ -460,7 +520,6 @@ done
 # JSON — job D, the one that usually succeeded — so a failure alert displayed a
 # success payload. One line per phase, "<label> <rc> <what went wrong>", keeps the
 # alert honest without making the wrapper parse a 300KB log.
-STATUS_FILE="$REPO/logs/cron/${TODAY}.status"
 : > "$STATUS_FILE"
 for pair in "A:$RC_A:$TMP_A_EVENTS" "B:$RC_B:$TMP_B_EVENTS" "C:$RC_C:$TMP_C_EVENTS" "D:$RC_D:$TMP_D_EVENTS"; do
   lbl="${pair%%:*}"; rest="${pair#*:}"; prc="${rest%%:*}"; pjson="${rest#*:}"
