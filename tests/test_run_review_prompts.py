@@ -26,6 +26,7 @@ SCRIPT = REPO / "scripts" / "run-review.sh"
 EXPANDED = {
     "TODAY": "2026-10-07",
     "SIGNALS_FILE": "logs/reviews/2026-10-07.signals.json",
+    "STANDING_FILE": "logs/reviews/2026-10-07.standing.json",
     "OBSERVATORY_SUMMARY": "/tmp/briefing-summary.json",
     "BRIEFING_JSON": "/tmp/briefing.json",
     "STOCK_DATA_DIR": "/tmp/stock-management",

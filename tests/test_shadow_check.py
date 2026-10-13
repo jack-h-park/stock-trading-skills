@@ -108,3 +108,14 @@ def test_a_clean_history_prints_nothing(tmp_path):
     _db(db, [("META", day, 751.66)])
     _record(tmp_path, day, day, [("META", 751.90)])
     assert _run(tmp_path, db) == ""
+
+
+def test_a_record_from_earlier_today_is_never_the_one_checked(tmp_path):
+    db = tmp_path / "prices.db"
+    yesterday, today = _day(-1), _day(0)
+    _db(db, [("MSFT", yesterday, 510.0)])
+    _record(tmp_path, yesterday, yesterday, [("MSFT", 510.0)])
+    _record(tmp_path, today, today, [("MSFT", 520.0)])  # a manual run before the scheduled one
+    assert _run(tmp_path, db) == ""
+    ledger = (tmp_path / "logs" / "shadow" / "ledger.jsonl").read_text().splitlines()
+    assert [json.loads(line)["date"] for line in ledger] == [yesterday]
