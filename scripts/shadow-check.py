@@ -225,7 +225,13 @@ def main() -> int:
     if args.date:
         path = reviews / (f"{args.date}.decisions.json")
     else:
-        found = sorted(reviews.glob("*.decisions.json"))
+        # The newest record dated BEFORE today. A same-day record cannot have a
+        # settled close yet, so checking it can only say "no-settled-row" — on
+        # 2026-10-07 two manual runs before the 13:30 one left a same-day record,
+        # and the scheduled check reported all three of its prices as unverified.
+        today = datetime.date.today().isoformat()
+        found = sorted(p for p in reviews.glob("*.decisions.json")
+                       if p.name[:10] < today)
         path = found[-1] if found else None
 
     if path is None or not path.exists():
