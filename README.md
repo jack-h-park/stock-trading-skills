@@ -108,10 +108,17 @@ placed.
 | `skills/portfolio-review/SKILL.md` | Periodic signal scan → dated report (read-only) | No |
 | `skills/reconcile/SKILL.md` | Broker vs spreadsheet drift check (read-only) | No |
 | `skills/log/SKILL.md` | Append-only markdown log format contract | No |
+| `skills/tax-desk/SKILL.md` | Which command answers which tax question; facts and scenario arithmetic only | No |
+| `skills/analyst-facts/SKILL.md` | Analyst ratings, targets and earnings as facts, sorted only by owner-named keys | No |
+| `config/planned-sales.example.json` | Shape of the untracked file of planned sales the tax calendar checks | No |
 | `providers/_contract.md` | The interface every provider must satisfy | No |
 | `providers/<broker>/adapter.md` | Maps broker tools ↔ the contract | **Yes** |
 | `providers/<broker>/capabilities.md` | What the broker can and cannot do | **Yes** |
 | `scripts/run-review.sh` | Headless runner: review + reconcile + digest | No |
+| `scripts/tax_calendar.py` | Wash-sale windows from Robinhood and the Observatory, orders that touch them, planned-sale checks → `logs/tax-calendar/` | Robinhood |
+| `scripts/fill_reconcile.py` | Robinhood sell fills vs the Observatory's realized rows | Robinhood |
+| `scripts/analyst_facts.py` | Per-ticker analyst and earnings facts, no score | Robinhood |
+| `scripts/hermes/install-skills.sh` | Copies `skills/` into the Hermes trader profile (`--dry-run` first) | No |
 
 **`logs/` is not in this repo.** The journal names positions, quantities and
 balances, so it stays on the machine that writes it. Only the format contract
@@ -147,6 +154,12 @@ author's `trader` profile, delivering the digest to Telegram. It runs only on th
 host whose `~/.hermes/role` file says `ops` (the account name does not matter) and
 refuses anywhere else; it exists so the job's definition stays versioned in this repo
 rather than in the runtime. The job is created **paused** — installing is not enabling.
+>
+> The same installer declares `tax-calendar` (weekdays 14:15 PT, also paused), which
+> rebuilds `logs/tax-calendar/<date>.json` and speaks only when the set of wash-sale
+> windows changes. It reads the Stock Portfolio Observatory's `pnpm tax:calendar`; when
+> that is unavailable (a refresh in progress, or an Observatory without the CLI) the
+> calendar is marked partial rather than failing.
 >
 > The delivery target has no default. Pass it as the first argument, or set
 > `TRADER_CRON_DELIVER`, so a specific chat — or a forum topic,

@@ -1,0 +1,16 @@
+[
+  {
+    "ticker": "AAAA",
+    "account_role": "Long-term",
+    "planned_date": "2026-11-16",
+    "intent": "loss-harvest",
+    "note": "Example only. Copy to config/planned-sales.local.json (gitignored). intent is one of loss-harvest | gain | other; account_role is a role (Agentic, Long-term, Mid-term) or an Observatory account label."
+  },
+  {
+    "ticker": "BBBB",
+    "account_role": "Mid-term",
+    "planned_date": "2026-12-01",
+    "intent": "gain",
+    "note": ""
+  }
+]
