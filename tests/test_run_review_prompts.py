@@ -1,10 +1,10 @@
 """The prompt assignments in scripts/run-review.sh must survive `set -u`.
 
 The prompts are double-quoted bash strings, so every literal dollar sign has to
-be written `\\$`. One that is not is a parameter expansion: `$249.36` in an
-example line reads as `$2` followed by "49.36", and under `set -u` the
+be written `\\$`. One that is not is a parameter expansion: `$100.00` in an
+example line reads as `$1` followed by "00.00", and under `set -u` the
 assignment aborts the whole script. That happened on 2026-10-05 and 10-06 — the
-reconcile example added to PROMPT_D carried `$249.36`, `$347.39` and `$366.54`,
+reconcile example added to PROMPT_D carried three unescaped dollar amounts,
 and every run died between the merge and the digest, after jobs A/B/C had done
 their work, with nothing delivered.
 
@@ -86,7 +86,7 @@ def test_the_reconcile_example_keeps_its_dollar_amounts():
         capture_output=True,
         text=True,
     )
-    assert "@ $249.36 (+1 sh, avg +$3.21)" in proc.stdout
+    assert "@ $100.00 (+1 sh, avg +$2.50)" in proc.stdout
 
 
 def test_wash_sale_windows_are_flagged_not_gated():

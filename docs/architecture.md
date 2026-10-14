@@ -79,9 +79,9 @@ Mid-term `<MIDTERM_ACCOUNT>`) and external brokerages are **reference/reconcile 
 
 | Account | agentic_allowed | Role |
 |---|---|---|
-| Agentic `••••0956` | ✅ | The only account the agent trades |
-| Long-term `••••9965` | ❌ | Reconciled vs sheet; not traded |
-| Mid-term `••••1478` | ❌ | Reconciled vs sheet; not traded |
+| Agentic | ✅ | The only account the agent trades |
+| Long-term | ❌ | Reconciled vs sheet; not traded |
+| Mid-term | ❌ | Reconciled vs sheet; not traded |
 
 ## Strategy summary
 
@@ -119,6 +119,25 @@ Mid-term `<MIDTERM_ACCOUNT>`) and external brokerages are **reference/reconcile 
   commands run under `--sandbox workspace-write` with network off: `git commit` cannot take
   `.git/index.lock` and no host resolves. Until 2026-09-28 the guard was `claude -p`'s
   `--allowedTools` whitelist ([decisions §19](decisions.md#19-the-review-runs-on-codex-on-the-trader-profiles-model)).
+- **The interactive agent gets two Robinhood servers, one per job.** The trader Hermes
+  profile registers `scripts/mcp-robinhood-proxy.py` twice (the registration itself lives in
+  hermes-control-plane's `configure-live-trader.sh`):
+
+  | Server | Proxy flag | Relays | Used for |
+  |---|---|---|---|
+  | `robinhood` | `--read-only` | `get_*` and `search` only | Research, tax facts, reconciliation |
+  | `robinhood-orders` | `--agentic-orders` | `get_accounts`, `get_portfolio`, `get_equity_orders`, `review_equity_order`, `place_equity_order`, `cancel_equity_order` | The confirm-before-place order protocol |
+
+  In `--agentic-orders` mode every other tool is refused before anything is sent, which
+  covers option, crypto and exercise orders, watchlist and alert edits, scans and
+  trade-approval declines. `review_equity_order`, `place_equity_order` and
+  `cancel_equity_order` are refused unless `account_number` is the Agentic account, read on
+  each call from the gitignored `config/accounts.local.md`; a missing file, row or argument
+  refuses the call. Cancel takes `account_number` as a required argument, and Robinhood
+  rejects a cancel whose account does not own the order, so it gets the same check with no
+  order lookup. Robinhood's `agentic_allowed` flag stays the outer gate, and Hermes
+  `tools.include` decides which of these tools the model is shown. The two flags cannot be
+  combined: the proxy exits 2 if given both.
 - **Live trades require a human.** Confirm-before-place is the default in
   `config/guardrails.md`; standing auto-place is defined but off.
 - **Order placement is irreversible** and the user is ultimately responsible for it

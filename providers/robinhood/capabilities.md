@@ -8,8 +8,12 @@ Source: https://robinhood.com/us/en/support/articles/trading-with-your-agent/
 - **Options orders** — rolling out; may not be available on every account yet.
 - Read-only: accounts, portfolio, positions, quotes, historicals, tradability, orders.
 - Write tools (`place_*`, `cancel_*`, `exercise_*`, watchlist and alert edits) reach
-  the interactive agent only. `scripts/mcp-robinhood-proxy.py --read-only`, which the
-  scheduled review is pointed at, refuses them and hides them from `tools/list`.
+  the interactive agent only, and only the equity order tools at that.
+  `scripts/mcp-robinhood-proxy.py --read-only`, which the scheduled review and the
+  trader profile's `robinhood` server use, refuses them and hides them from `tools/list`.
+  `--agentic-orders` (the `robinhood-orders` server) relays review, place and cancel of
+  equity orders on the Agentic account only, and refuses every other write. See
+  [docs/architecture.md § Safety model](../../docs/architecture.md#safety-model).
 - Pre-trade simulation via `review_equity_order` (returns warnings).
 - Watchlist management.
 - **Fractional quantities, on both sides.** Verified 2026-07-30 against account <AGENTIC_ACCOUNT>:

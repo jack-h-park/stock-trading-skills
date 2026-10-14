@@ -8,8 +8,8 @@ Broker-agnostic trading rules. The agent must read this before any order flow or
 (`agentic_allowed: true`). BUY/TRIM proposals and order execution are restricted to
 this account.
 
-**Review** covers all of Jack's accounts: Robinhood Long-term (`<MIDTERM_ACCOUNT>`),
-Robinhood Mid-term (`<LONGTERM_ACCOUNT>`), and external brokerages (Chase, Fidelity, Merrill)
+**Review** covers all of Jack's accounts: Robinhood Long-term (`<LONGTERM_ACCOUNT>`),
+Robinhood Mid-term (`<MIDTERM_ACCOUNT>`), and external brokerages (Chase, Fidelity, Merrill)
 tracked in the holdings sheet. These accounts are read-only — the agent surfaces
 informational flags (notable drawdowns or gains) but never proposes or executes
 orders against them. Jack acts on those flags manually.
