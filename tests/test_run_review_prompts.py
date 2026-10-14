@@ -87,3 +87,29 @@ def test_the_reconcile_example_keeps_its_dollar_amounts():
         text=True,
     )
     assert "@ $249.36 (+1 sh, avg +$3.21)" in proc.stdout
+
+
+def test_wash_sale_windows_are_flagged_not_gated():
+    """Job A must flag a ranked BUY inside an Observatory wash-sale window, and must
+    not turn that window into a block: only the tax file under 4a blocks a BUY.
+    """
+    blocks = assignments(SCRIPT.read_text())
+    prelude = "set -u\n" + "".join(f"{k}={v!r}\n" for k, v in EXPANDED.items())
+    proc = subprocess.run(
+        ["bash", "-c", prelude + "\n".join(blocks.values()) + '\nprintf "%s" "$PROMPT_A"'],
+        capture_output=True,
+        text=True,
+    )
+    prompt = proc.stdout
+    assert "washSaleWindows.windows" in prompt
+    for field in ("blockedThrough", "realizedLoss"):
+        assert field in prompt
+    assert "does not count toward the 3" in prompt
+    assert "does not remove, re-rank or block the candidate" in prompt
+    assert "only logs/reviews/2026-10-07.tax.json under 4a can block" in prompt
+    # The standing rule this guidance sits under is unchanged.
+    assert "must NOT change the ranked BUY list or its order" in prompt
+
+    context = (REPO / "config" / "observatory-context.md").read_text()
+    assert "`washSaleWindows.windows[]`" in context
+    assert "It is still a flag, not a gate." in context
