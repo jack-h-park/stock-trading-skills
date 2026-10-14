@@ -75,6 +75,29 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
 > nothing for a deeper drop on Thursday. 6 sits above every week observed so far, so it
 > bounds the runaway case without touching normal operation.
 
+## Wash-sale window (US tax)
+
+A **BUY is blocked** while any of the three Robinhood accounts (Agentic, Long-term,
+Mid-term) sold that symbol **at a loss in the last 30 days**; it clears on day 31 after
+the sale. The review's own stop-losses start the same block. A proposed sell that would
+realize a loss is **annotated** when the symbol was bought in any of those accounts in the
+last 30 days, because that loss would be deferred. `scripts/tax_guard.py` computes both;
+the review never derives them itself.
+
+This is a guardrail, not a threshold: a departure cannot read past it.
+
+> **Why.** A loss is disallowed for the year when the same security is bought within 30
+> days before or after the loss sale in **any** of the taxpayer's accounts, and a broker's
+> 1099-B usually adjusts only within one account. The Agentic sleeve buys mega-caps the
+> Long-term account also holds, and its own rules make the pattern on their own: a
+> stop-loss followed by a further drop raises a BUY on the same symbol. The cost of the
+> block is at most 30 days of $100 dip-buys on one symbol. Accounts at other brokers are
+> not visible to the review and are out of scope.
+>
+> Each exit also shows its lots' US holding period (short-term until a date, long-term,
+> or mixed) — display only; no proposal waits for a lot to turn long-term. Korea taxes
+> overseas gains at one rate whatever the holding period and has no wash-sale rule.
+
 ## Kill switch
 
 If the portfolio is down **> 5% intraday**, halt all new orders and notify the user.

@@ -383,3 +383,24 @@ change the model behind the signals without anyone choosing it.
 against Claude; the first codex runs are diffed against a Claude run of the same date
 before the switch is trusted.
 
+## 20. US tax guards: wash-sale window blocks buys; holding period is shown, not acted on (2026-10-13)
+
+**Decision.** `scripts/tax_guard.py` reads, through the read-only proxy, the realized
+trades and filled orders of all three Robinhood accounts and the Agentic tax lots, and
+writes `logs/reviews/<date>.tax.json`. Job A blocks a BUY on any symbol sold at a loss in
+the last 30 days in any of those accounts (clearing on day 31), and annotates a
+loss-realizing sell when the symbol was bought in the last 30 days. Each exit line shows
+the lots' US term and the date the oldest lot becomes long-term.
+
+**Why.** The wash-sale rule spans every account the taxpayer owns, the broker's 1099-B
+does not adjust across accounts, and the review both buys symbols another account holds
+and, after a stop-loss, raises a dip-buy on the same symbol. When the guard was built a
+non-Agentic account had just realized losses on several symbols outside the Agentic
+universe, each of which a repurchase in any account within 30 days would have disallowed.
+
+**Chosen against.** A warning instead of a block: the block costs at most 30 days of $100
+adds on one symbol, against a deduction lost silently. Holding a take-profit back as a lot
+nears long-term: the rate gain depends on the year's other income, which the review cannot
+see, so the date is shown and the choice left with the person confirming. Recording sales
+at other brokers by hand: out of scope until there is a reason to trade those symbols here.
+
