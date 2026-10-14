@@ -14,8 +14,9 @@ The user's other Robinhood accounts have `agentic_allowed: false` and must never
 - `<MIDTERM_ACCOUNT>` — "Mid-term" (margin)
 - `<LONGTERM_ACCOUNT>` — "Long-term" (cash)
 
-Mask all but the last 4 digits in user-facing prose (e.g. `••••0956`); pass the full number
-to tools unchanged. For any future crypto-backed flow, pass `rhs_account_number` instead.
+Name accounts by role (Agentic, Long-term, Mid-term) in user-facing prose, never by number,
+full or masked; resolve the placeholder from `config/accounts.local.md` and pass the full
+number to tools unchanged. For any future crypto-backed flow, pass `rhs_account_number` instead.
 
 ## Mapping
 
@@ -40,5 +41,9 @@ are not part of the trading flow; use directly when needed.
 
 - Always call `review_equity_order` first and surface its pre-trade warnings to the user
   before `place_equity_order`.
+- `review_equity_order`, `place_equity_order` and `cancel_equity_order` all take
+  `account_number` (cancel requires it beside `order_id`). The trader profile reaches them
+  through the `robinhood-orders` server, whose proxy refuses any of the three unless
+  `account_number` is the Agentic account (`scripts/mcp-robinhood-proxy.py --agentic-orders`).
 - Resolve ambiguous symbols via `search` before quoting/ordering.
 - Confirm the target account from `get_accounts` if more than one exists.
