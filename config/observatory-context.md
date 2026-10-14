@@ -44,8 +44,51 @@ An older version may be read as-is.
 | `positions.concentration.overCap[]` | Positions past the Observatory's own per-position cap, with `currentPct` |
 | `positions.taxSensitive[]` | Positions where selling has a tax consequence, with `reason` |
 | `positions.topGainers[]` / `topLosers[]` | Biggest movers across all accounts |
+| `washSaleWindows.windows[]` | US tickers sold at a loss in the last 30 days, in any account at any brokerage — see below |
 | `health.issues[]` | Anything wrong with the data behind all of the above |
 | `ingestedAt` | When these figures were built — typically the previous afternoon |
+
+## `washSaleWindows` — a loss a BUY here would disallow
+
+Added to schema version 1 as an additive field; an older summary simply lacks it, which is
+not an error. Shape:
+
+- `measuredOn` — the date the windows were measured against.
+- `transactionsThrough` — the last date the Observatory has transactions for. A sale after it
+  is not in the list, so an empty list means "none as of that date", not "none".
+- `line` — one sentence summarising the open windows, or `null` when there are none.
+- `windows[]`, one per ticker:
+  - `ticker`, `blockedThrough` (last day a buy still falls inside a window),
+    `clearFrom` (first day a buy is outside every window), `daysLeft` (0 on the last day)
+  - `realizedLoss` — the loss in the open windows, USD, **negative**
+  - `possiblyDisallowed` — the part of it already matched by a buy, USD, negative or 0;
+    an estimate
+  - `boughtSinceSale` — a buy has already landed inside the window after the sale
+  - `soldIn` — the accounts the sale was in, masked
+  - `buysInWindow[]` — the buys inside the window, before or after the sale
+
+These are tickers sold at a loss in the last 30 days **across every account the owner
+holds**, not just the three Robinhood accounts. A buy of one of them in ANY account —
+including the Agentic account this agent trades — disallows that loss under IRC §1091.
+
+How this relates to the wash-sale guardrail: `scripts/tax_guard.py` already writes
+`logs/reviews/<date>.tax.json` from the three Robinhood accounts, and a BUY on a symbol under
+its `buyBlocks` is blocked before ranking (job A, step 4a). That block is a guardrail and
+comes from that file, never from this one. The Observatory's windows also cover the other
+brokerages, so a ticker can appear here and not there — a sale at Fidelity, say.
+
+**What the review must do with it:** if a BUY candidate on the ranked list appears in
+`washSaleWindows.windows`, say so in **Flags**, naming the ticker, the `blockedThrough`
+date and the `realizedLoss` at stake (and `possiblyDisallowed` when it is non-zero), e.g.
+`XYZ: in a wash-sale window through 2026-11-08 — buying it disallows a −$140 loss realized
+elsewhere`. This flag is required, and it does **not** count toward the two-or-three
+observation limit below: it is the one item here that names money the BUY itself would
+cost.
+
+It is still a flag, not a gate. It does not remove the candidate, move it down the list, or
+block it — "How to use it" below applies to this field exactly as to the others. Whether a
+cross-brokerage window should hard-block a BUY the way `buyBlocks` does is a policy decision
+for the owner, not one this file makes.
 
 ## ⚠️ The percentages are not the guardrail percentages
 
