@@ -22,3 +22,7 @@ logs/
 
 # Real account numbers and sheet ids behind the placeholders. See accounts.example.md.
 config/accounts.local.md
+
+# Planned sales the owner declares (intent only; moves no money). Names tickers and
+# dates of real decisions, so it stays local. Shape: config/planned-sales.example.json.
+config/planned-sales.local.json

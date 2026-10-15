@@ -12,7 +12,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER="$HERE/../scripts/hermes/install-cron.sh"
-JOBS=(trading-review)
+JOBS=(trading-review tax-calendar)
 FAIL=0
 ACCOUNT="$(id -un)"   # expanded up front: a substitution inside a check's arguments would clobber $?
 
@@ -96,6 +96,14 @@ run_installer env; rc=$?
 new_home; ARGS=(local); set_role ops
 run_installer env FAKE_PAUSE_NOOP=1; rc=$?
 [[ $rc -ne 0 ]] && grep -q "not paused" "$TEST_HOME/out.log"; check "a pause that exits 0 without effect fails the run" $?
+
+# 3b. each job runs its own wrapper on its own schedule, and the wrapper is installed
+new_home; ARGS=(local); set_role ops
+run_installer env; rc=$?
+grep '^cron create' "$FAKE_LOG" | grep -q -- '15 14 \* \* 1-5 --name tax-calendar --script tax-calendar-cron.sh --no-agent'
+check "tax-calendar: weekdays 14:15, its own --no-agent wrapper" $?
+[[ -x "$TEST_HOME/.hermes/profiles/trader/scripts/tax-calendar-cron.sh" ]]
+check "tax-calendar wrapper installed into the profile scripts dir" $?
 
 # 4. no chat id in the tree
 ! grep -rEq 'telegram:-?[0-9]{6,}' "$INSTALLER"; check "installer carries no chat id" $?

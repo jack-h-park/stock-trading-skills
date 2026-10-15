@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# install-cron.sh — declare the trading-review Hermes cron job under the `trader`
-# profile (ops host only). Versioned, reproducible source for the job; the job
-# itself lives in the trader profile's runtime cron store once created.
+# install-cron.sh — declare the trader profile's Hermes cron jobs (ops host only).
+# Versioned, reproducible source for the jobs; each job itself lives in the trader
+# profile's runtime cron store once created.
+#
+#   trading-review  weekdays 13:30 local  scripts/hermes/trading-review-cron.sh
+#   tax-calendar    weekdays 14:15 local  scripts/hermes/tax-calendar-cron.sh
 #
 # Mirrors hermes-control-plane's gateway/scripts/cron-install-ops.sh pattern:
-#   - installs the --no-agent wrapper into ~/.hermes/scripts/
-#   - creates the cron job PAUSED (installing != enabling)
+#   - installs each --no-agent wrapper into the profile's scripts/ dir
+#   - creates each cron job PAUSED (installing != enabling)
 #
 # Delivery: --deliver telegram → the trader profile must have TELEGRAM_BOT_TOKEN +
 # TELEGRAM_CHAT_ID configured (gateway/env/trader.env on the ops host). Until then,
@@ -26,8 +29,9 @@
 #   TRADING_AGENT_REPO=~/workspace/ai-assets/jackhpark-stock-trading-skills \
 #     scripts/hermes/install-cron.sh telegram:<chat>[:<thread>]|telegram|local
 #   (or export TRADER_CRON_DELIVER and pass no argument)
-# Then enable in the maintenance window:
+# Then enable in the maintenance window, one job at a time:
 #   <hermes> --profile trader cron resume trading-review
+#   <hermes> --profile trader cron resume tax-calendar
 set -euo pipefail
 
 # Refuse to run anywhere but the host that declares itself the ops host. The
@@ -51,26 +55,32 @@ if [[ -z "$DELIVER" ]]; then
   exit 2
 fi
 PROFILE="trader"
-JOB_NAME="trading-review"
-SCHEDULE="30 13 * * 1-5"   # weekdays 13:30 local (= 16:30 ET, 30 min after US close)
+# name|schedule|wrapper. Times are the ops host's local zone (Pacific).
+#   trading-review: 13:30 = 16:30 ET, 30 min after the US close.
+#   tax-calendar:   14:15, after the close and after the review, so the day's fills
+#                   and the review's own orders are in the windows it reports.
+JOB_SPECS=(
+  "trading-review|30 13 * * 1-5|trading-review-cron.sh"
+  "tax-calendar|15 14 * * 1-5|tax-calendar-cron.sh"
+)
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="${TRADING_AGENT_REPO:-$(cd "$HERE/../.." && pwd)}"
 SCRIPTS_DIR="$HOME/.hermes/profiles/$PROFILE/scripts"   # Hermes --script resolves under $HERMES_HOME
-WRAPPER_SRC="$HERE/trading-review-cron.sh"
-WRAPPER_DST="$SCRIPTS_DIR/trading-review-cron.sh"
 
 PY="$HOME/.hermes/hermes-agent/venv/bin/python"
 hermes() { "$PY" -m hermes_cli.main "$@"; }
 
-[ -f "$WRAPPER_SRC" ] || { echo "wrapper not found: $WRAPPER_SRC" >&2; exit 1; }
-
-# 1. Install the wrapper into the PROFILE's scripts dir. Hermes resolves --script
+# 1. Install each wrapper into the PROFILE's scripts dir. Hermes resolves --script
 #    relative to $HERMES_HOME (= the profile root), i.e. <profile>/scripts/.
 mkdir -p "$SCRIPTS_DIR"
-cp "$WRAPPER_SRC" "$WRAPPER_DST"
-chmod +x "$WRAPPER_DST"
-echo "installed wrapper -> $WRAPPER_DST"
+for spec in "${JOB_SPECS[@]}"; do
+  wrapper="${spec##*|}"
+  [ -f "$HERE/$wrapper" ] || { echo "wrapper not found: $HERE/$wrapper" >&2; exit 1; }
+  cp "$HERE/$wrapper" "$SCRIPTS_DIR/$wrapper"
+  chmod +x "$SCRIPTS_DIR/$wrapper"
+  echo "installed wrapper -> $SCRIPTS_DIR/$wrapper"
+done
 
 # 1b. Profile runtime settings for clean, schedulable delivery (idempotent):
 #     - cron_mode allow: let cron jobs run without per-tick approval
@@ -90,13 +100,19 @@ job_state() {
     | awk -v n="$1" '/^ +[0-9a-f]+ \[/ {st=$2} $1 == "Name:" && $2 == n {print st; exit}' || true
 }
 
-if [[ -n "$(job_state "$JOB_NAME")" ]]; then
-  echo "[skip] cron job '$JOB_NAME' already exists — leaving it untouched."
-else
+for spec in "${JOB_SPECS[@]}"; do
+  JOB_NAME="${spec%%|*}"
+  rest="${spec#*|}"
+  SCHEDULE="${rest%%|*}"
+  WRAPPER="${rest#*|}"
+  if [[ -n "$(job_state "$JOB_NAME")" ]]; then
+    echo "[skip] cron job '$JOB_NAME' already exists — leaving it untouched."
+    continue
+  fi
   echo "[create] $JOB_NAME ($SCHEDULE, deliver=$DELIVER, --no-agent)"
   hermes --profile "$PROFILE" cron create "$SCHEDULE" \
     --name "$JOB_NAME" \
-    --script "trading-review-cron.sh" \
+    --script "$WRAPPER" \
     --no-agent \
     --deliver "$DELIVER"
   hermes --profile "$PROFILE" cron pause "$JOB_NAME"
@@ -108,7 +124,6 @@ else
   fi
   echo "created PAUSED. Resume when ready:"
   echo "  $PY -m hermes_cli.main --profile $PROFILE cron resume $JOB_NAME"
-fi
-
+done
 echo
 echo "Verify:  $PY -m hermes_cli.main --profile $PROFILE cron list --all"

@@ -43,29 +43,17 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The accounts.local.md parser is shared with mcp-robinhood-proxy.py --agentic-orders.
+from accounts_local import ROLES, accounts  # noqa: E402,F401
 from signal_windows import Proxy  # noqa: E402
 
 WINDOW_DAYS = 30
 STALE_WEEKDAYS = 2
-ROLES = {"<AGENTIC_ACCOUNT>": "Agentic", "<LONGTERM_ACCOUNT>": "Long-term",
-         "<MIDTERM_ACCOUNT>": "Mid-term"}
-
-
-def accounts(local_md: str) -> dict[str, str]:
-    """{role: account number} from the gitignored config/accounts.local.md table."""
-    out = {}
-    for placeholder, role in ROLES.items():
-        m = re.search(r"^\|\s*`?" + re.escape(placeholder) + r"`?\s*\|\s*([0-9]+)\s*\|",
-                      local_md, re.M)
-        if m:
-            out[role] = m.group(1)
-    return out
 
 
 def _date(ts: str) -> str:

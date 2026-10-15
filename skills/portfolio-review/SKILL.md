@@ -17,9 +17,9 @@ This skill covers **all of Jack's accounts**, not just the Agentic trading accou
 
 | Account | Source | Trading scope |
 |---|---|---|
-| Robinhood Agentic (••••0956) | Robinhood MCP (live) | BUY/TRIM proposals + execution |
-| Robinhood Long-term (••••9965) | Robinhood MCP (live) | Read-only — FYI flags only |
-| Robinhood Mid-term (••••1478) | Robinhood MCP (live) | Read-only — FYI flags only |
+| Robinhood Agentic (`<AGENTIC_ACCOUNT>`) | Robinhood MCP (live) | BUY/TRIM proposals + execution |
+| Robinhood Long-term (`<LONGTERM_ACCOUNT>`) | Robinhood MCP (live) | Read-only — FYI flags only |
+| Robinhood Mid-term (`<MIDTERM_ACCOUNT>`) | Robinhood MCP (live) | Read-only — FYI flags only |
 | External brokerages (Chase, Fidelity, Merrill) | Google Sheet only | Read-only — FYI flags only |
 
 All proposals and order execution remain scoped to the Agentic account. Flags for
