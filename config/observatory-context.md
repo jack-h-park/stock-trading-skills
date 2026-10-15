@@ -71,11 +71,13 @@ These are tickers sold at a loss in the last 30 days **across every account the 
 holds**, not just the three Robinhood accounts. A buy of one of them in ANY account —
 including the Agentic account this agent trades — disallows that loss under IRC §1091.
 
-How this relates to the wash-sale guardrail: `scripts/tax_guard.py` already writes
-`logs/reviews/<date>.tax.json` from the three Robinhood accounts, and a BUY on a symbol under
-its `buyBlocks` is blocked before ranking (job A, step 4a). That block is a guardrail and
-comes from that file, never from this one. The Observatory's windows also cover the other
-brokerages, so a ticker can appear here and not there — a sale at Fidelity, say.
+How this relates to the wash-sale guardrail: these windows **do** block a BUY, but not
+through this file. `scripts/tax_guard.py` reads the same summary in code, takes every window
+still open today, and merges it into `buyBlocks` in `logs/reviews/<date>.tax.json` beside the
+Robinhood accounts' own loss sales, tagged `source: "observatory"`. Job A blocks a BUY on any
+symbol there before ranking (step 4a). That is a guardrail computed in code, the same as the
+add cap. Nothing in this file becomes a gate, and the review never builds a block from what
+it reads here.
 
 **What the review must do with it:** if a BUY candidate on the ranked list appears in
 `washSaleWindows.windows`, say so in **Flags**, naming the ticker, the `blockedThrough`
@@ -86,9 +88,9 @@ observation limit below: it is the one item here that names money the BUY itself
 cost.
 
 It is still a flag, not a gate. It does not remove the candidate, move it down the list, or
-block it — "How to use it" below applies to this field exactly as to the others. Whether a
-cross-brokerage window should hard-block a BUY the way `buyBlocks` does is a policy decision
-for the owner, not one this file makes.
+block it — "How to use it" below applies to this field exactly as to the others. In the
+normal case 4a has already blocked the symbol and it never reaches the ranked list; the flag
+is what is left when the tax file is missing or did not carry that window.
 
 ## ⚠️ The percentages are not the guardrail percentages
 

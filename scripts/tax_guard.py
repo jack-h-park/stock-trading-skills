@@ -15,7 +15,14 @@ A uses, so nothing here can place an order):
        a loss in the last 30 days; it clears on day 31 after the sale;
      - a loss-realizing sell is annotated when the symbol was bought in any of them in
        the last 30 days, because that loss would be deferred.
-   Accounts at other brokers are not visible here and are out of scope.
+   Accounts at other brokers are not visible through Robinhood. The Observatory's
+   briefing summary covers them: its washSaleWindows lists every US ticker sold at a
+   loss in the last 30 days at any brokerage, and a window still open today becomes a
+   block too, tagged source "observatory". It is read as a file and never required:
+   missing, unreadable or newer-schema leaves the Robinhood blocks standing alone and
+   says why under "observatory". Its transactions lag (the other brokers' exports are
+   pulled by hand), so the lag is reported and flagged past STALE_WEEKDAYS missing
+   weekdays — counted in weekdays so a weekend alone never trips it.
 
 2. HOLDING PERIOD. A US gain is short-term unless the lot was held more than a year.
    For each Agentic position the open lots, their term, and the date the oldest lot
@@ -25,7 +32,8 @@ A uses, so nothing here can place an order):
 Korea taxes overseas gains at one rate whatever the holding period and has no
 wash-sale rule; both guards are about the US return only.
 
-usage: tax_guard.py --repo PATH --python PY --proxy PATH [--out FILE] [--date YYYY-MM-DD]
+usage: tax_guard.py --repo PATH --python PY --proxy PATH [--observatory FILE]
+                    [--out FILE] [--date YYYY-MM-DD]
 Exit 0 with no file on any failure: job A then says the tax facts are unavailable.
 Python 3.9 compatible.
 """
@@ -45,6 +53,7 @@ from accounts_local import ROLES, accounts  # noqa: E402,F401
 from signal_windows import Proxy  # noqa: E402
 
 WINDOW_DAYS = 30
+STALE_WEEKDAYS = 2
 
 
 def _date(ts: str) -> str:
@@ -66,6 +75,82 @@ def buy_blocks(loss_sales: list[dict[str, Any]], today: datetime.date) -> dict[s
         if cur is None or s["date"] > cur["date"]:
             blocks[s["symbol"]] = {**s, "clears": clears}
     return blocks
+
+
+def read_observatory(path: str | None) -> tuple[dict[str, Any] | None, str]:
+    """(summary, status). Any status but "ok" means the summary adds no block."""
+    if not path:
+        return None, "not configured"
+    try:
+        doc = json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        return None, "missing"
+    except (OSError, ValueError):
+        return None, "unreadable"
+    if not isinstance(doc, dict) or not isinstance(doc.get("schemaVersion"), int):
+        return None, "unreadable"
+    if doc["schemaVersion"] > 1:
+        return None, f"refused: schemaVersion {doc['schemaVersion']}"
+    if not isinstance(doc.get("washSaleWindows"), dict):
+        return None, "no washSaleWindows"
+    return doc, "ok"
+
+
+def observatory_blocks(summary: dict[str, Any] | None,
+                       today: datetime.date) -> dict[str, Any]:
+    """Symbols whose Observatory wash-sale window is still open today, any brokerage."""
+    if not summary:
+        return {}
+    blocks: dict[str, Any] = {}
+    for w in summary["washSaleWindows"].get("windows") or []:
+        try:
+            sym, through, clears = w["ticker"], w["blockedThrough"], w["clearFrom"]
+            datetime.date.fromisoformat(through)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if through < today.isoformat():
+            continue
+        blocks[sym] = {
+            "symbol": sym,
+            "source": "observatory",
+            "soldIn": w.get("soldIn") or [],
+            "loss": w.get("realizedLoss"),
+            "possiblyDisallowed": w.get("possiblyDisallowed"),
+            "blockedThrough": through,
+            "clears": clears,
+        }
+    return blocks
+
+
+def merge_blocks(robinhood: dict[str, Any], observatory: dict[str, Any]) -> dict[str, Any]:
+    """One block per symbol: the one that clears later. A tie keeps Robinhood's, which is
+    read live; the Observatory also ingests the Robinhood accounts, so the same sale
+    usually appears in both."""
+    out = {sym: {**b, "source": "robinhood"} for sym, b in robinhood.items()}
+    for sym, b in observatory.items():
+        if sym not in out or b["clears"] > out[sym]["clears"]:
+            out[sym] = b
+    return out
+
+
+def observatory_status(summary: dict[str, Any] | None, status: str,
+                       today: datetime.date) -> dict[str, Any]:
+    out: dict[str, Any] = {"status": status}
+    if summary:
+        through = summary["washSaleWindows"].get("transactionsThrough")
+        out["transactionsThrough"] = through
+        try:
+            last = datetime.date.fromisoformat(through)
+        except (TypeError, ValueError):
+            last = None
+        # Weekdays after the last transaction date and before today: sessions whose
+        # trades the summary cannot contain yet.
+        missing = None if last is None else sum(
+            1 for n in range(1, (today - last).days)
+            if (last + datetime.timedelta(days=n)).weekday() < 5)
+        out["missingWeekdays"] = missing
+        out["stale"] = missing is None or missing > STALE_WEEKDAYS
+    return out
 
 
 def recent_buys(buys: list[dict[str, Any]],
@@ -121,7 +206,8 @@ def _pages(proxy: Proxy, tool: str, args: dict[str, Any], key: str) -> list[dict
     return out
 
 
-def collect(proxy: Proxy, accts: dict[str, str], today: datetime.date) -> dict[str, Any]:
+def collect(proxy: Proxy, accts: dict[str, str], today: datetime.date,
+            observatory: str | None = None) -> dict[str, Any]:
     loss_sales: list[dict[str, Any]] = []
     buys: list[dict[str, Any]] = []
     since = (today - datetime.timedelta(days=WINDOW_DAYS + 1)).isoformat()
@@ -152,11 +238,14 @@ def collect(proxy: Proxy, accts: dict[str, str], today: datetime.date) -> dict[s
             if terms:
                 lots[sym] = terms
 
+    summary, status = read_observatory(observatory)
     return {
         "asOf": today.isoformat(),
         "accountsCovered": sorted(accts),
         "lossSales": sorted(loss_sales, key=lambda s: (s["date"], s["symbol"])),
-        "buyBlocks": buy_blocks(loss_sales, today),
+        "buyBlocks": merge_blocks(buy_blocks(loss_sales, today),
+                                  observatory_blocks(summary, today)),
+        "observatory": observatory_status(summary, status, today),
         "recentBuys": recent_buys(buys, today),
         "lots": lots,
     }
@@ -167,6 +256,7 @@ def main() -> int:
     ap.add_argument("--repo", required=True)
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--proxy", required=True)
+    ap.add_argument("--observatory", help="the Observatory's briefing-summary.json")
     ap.add_argument("--out")
     ap.add_argument("--date")
     args = ap.parse_args()
@@ -177,7 +267,7 @@ def main() -> int:
             raise RuntimeError("no account found in config/accounts.local.md")
         proxy = Proxy(args.python, args.proxy)
         try:
-            doc = collect(proxy, accts, today)
+            doc = collect(proxy, accts, today, args.observatory)
         finally:
             proxy.close()
     except Exception as e:  # noqa: BLE001 — job A reports the facts as unavailable
