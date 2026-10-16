@@ -26,3 +26,8 @@ config/accounts.local.md
 # Planned sales the owner declares (intent only; moves no money). Names tickers and
 # dates of real decisions, so it stays local. Shape: config/planned-sales.example.json.
 config/planned-sales.local.json
+
+# Switches scripts/scheduled_orders.py from dry run to submitting for approval.
+# Per host by design: a clone must never inherit a live switch. Shape:
+# config/execution.example.json.
+config/execution.local.json

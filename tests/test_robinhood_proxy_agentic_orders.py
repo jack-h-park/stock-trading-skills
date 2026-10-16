@@ -1,6 +1,6 @@
 """--agentic-orders enforcement in scripts/mcp-robinhood-proxy.py.
 
-The trader profile's order server runs the proxy in this mode. It relays six
+The trader profile's order server runs the proxy in this mode. It relays eight
 tools, and of those it lets review/place/cancel through only when
 `arguments.account_number` is the Agentic account read from the gitignored
 config/accounts.local.md. These tests never reach Robinhood: `_relay` is stubbed,
@@ -46,6 +46,8 @@ ALLOWED = [
     "get_accounts",
     "get_portfolio",
     "get_equity_orders",
+    "get_trade_approval_setting",
+    "get_trade_approvals",
     "review_equity_order",
     "place_equity_order",
     "cancel_equity_order",
@@ -126,7 +128,7 @@ def assert_no_account_number(payload):
         assert number not in text, "a refusal echoed an account number"
 
 
-# ── the six allowed tools ─────────────────────────────────────────────────────
+# ── the eight allowed tools ─────────────────────────────────────────────────────
 
 def test_order_tools_on_the_agentic_account_are_relayed(monkeypatch, accounts_file):
     lines = [call(n, order_args(AGENTIC), msg_id=i) for i, n in enumerate(CHECKED)]
@@ -245,7 +247,7 @@ def test_accounts_file_is_read_per_call(monkeypatch, accounts_file):
 # ── everything else is refused outright ───────────────────────────────────────
 
 @pytest.mark.parametrize("name", REFUSED)
-def test_tools_outside_the_six_are_refused_and_never_relayed(monkeypatch, accounts_file, name):
+def test_tools_outside_the_eight_are_refused_and_never_relayed(monkeypatch, accounts_file, name):
     payloads, relayed = run_main(monkeypatch, [call(name, order_args(AGENTIC), msg_id=5)])
     assert relayed == [], f"{name!r} was forwarded in agentic-orders mode"
     assert payloads[0]["id"] == 5
@@ -270,7 +272,7 @@ def test_a_json_rpc_batch_is_not_relayed(monkeypatch, accounts_file):
 
 # ── the listing hides what the mode refuses ──────────────────────────────────
 
-def test_tools_list_keeps_exactly_the_six():
+def test_tools_list_keeps_exactly_the_eight():
     names = ALLOWED + REFUSED[:-1] + ["get_equity_quotes"]
     payload = {"jsonrpc": "2.0", "id": 2,
                "result": {"tools": [{"name": n} for n in names]}}
@@ -296,7 +298,7 @@ def test_tools_list_transform_is_applied_in_agentic_orders_mode(monkeypatch):
     assert seen["initialize"] is None
 
 
-def test_the_allow_list_is_the_six_the_design_names():
+def test_the_allow_list_is_the_eight_the_design_names():
     assert sorted(proxy.AGENTIC_ORDER_TOOLS) == sorted(ALLOWED)
     assert sorted(proxy.ACCOUNT_CHECKED_TOOLS) == sorted(CHECKED)
 
