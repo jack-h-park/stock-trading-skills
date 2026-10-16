@@ -85,6 +85,11 @@ def tool_payload(response: dict[str, Any]) -> dict[str, Any]:
     if "error" in response:
         raise RuntimeError(response["error"].get("message", "tool error"))
     result = response.get("result") or {}
+    if result.get("isError"):
+        # MCP reports a failed tool call as a result, not a JSON-RPC error. Its text
+        # can parse as JSON, so returning it would read a refusal as an answer.
+        text = " ".join(str(i.get("text", "")) for i in result.get("content") or [])
+        raise RuntimeError(text[:300] or "tool reported an error")
     if result.get("structuredContent"):
         return result["structuredContent"]
     for item in result.get("content") or []:
@@ -94,16 +99,22 @@ def tool_payload(response: dict[str, Any]) -> dict[str, Any]:
 
 
 class Proxy:
-    """A minimal stdio JSON-RPC client for mcp-robinhood-proxy.py --read-only."""
+    """A minimal stdio JSON-RPC client for mcp-robinhood-proxy.py.
 
-    def __init__(self, python: str, proxy: str) -> None:
+    `mode` is the proxy flag and defaults to --read-only. scheduled_orders.py is
+    the one caller that passes --agentic-orders, so the proxy's Agentic-account
+    check sits under its orders as well.
+    """
+
+    def __init__(self, python: str, proxy: str, mode: str = "--read-only",
+                 client: str = "signal-windows") -> None:
         self.proc = subprocess.Popen(
-            [python, proxy, "--read-only"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            [python, proxy, mode], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True,
         )
         self.next_id = 0
         self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                    "clientInfo": {"name": "signal-windows", "version": "1"}})
+                                    "clientInfo": {"name": client, "version": "1"}})
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
     def _send(self, msg: dict[str, Any]) -> None:

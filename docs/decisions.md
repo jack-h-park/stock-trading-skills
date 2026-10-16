@@ -404,3 +404,62 @@ nears long-term: the rate gain depends on the year's other income, which the rev
 see, so the date is shown and the choice left with the person confirming. Recording sales
 at other brokers by hand: out of scope until there is a reason to trade those symbols here.
 
+
+## 21. Level 1: auto-eligible buys are submitted for approval in the Robinhood app (2026-10-15)
+
+**Decision.** §16 found the bottleneck: the standing authorization existed, and nothing
+could act on it, because the review is read-only and the one path that can place is an
+interactive session. That path now exists, and it is not an agent.
+`scripts/scheduled_orders.py` runs at 07:05 PT (`agentic-execute` cron), reads the
+decision record the previous afternoon's review wrote, and submits the orders marked
+`autoEligible` through the proxy's `--agentic-orders` mode. No model holds an order tool
+at any point.
+
+**The human gate moves; it does not go away.** The script refuses to submit unless
+Robinhood's own trade approval is on for the Agentic account
+(`human_must_approve_trades`). With it on, `place_equity_order` places nothing: the order
+goes to the Robinhood app and waits for Jack to approve or decline it. What changes is the
+cost of saying yes: a tap on a notification instead of opening a session, reading the
+proposal and typing a confirmation. The gate also moves out of this repo: the approval is
+enforced by the broker, so a bug here cannot place an order on its own.
+
+**What the script re-checks, and why it re-checks at all.** The review already decided
+`autoEligible`, and re-deriving signals would be the second implementation that
+shadow-check deliberately is not. So the script re-checks only what is mechanical and
+cheap to get wrong: kind and side, notional cap, universe (parsed from
+`strategy/policy.md`), one direction per symbol, departures and open decision requests,
+anything the record itself lists as blocked, the wash-sale window in the review's
+`<date>.tax.json` (a missing file or an unreadable clearing date → no buy), `priceAsOf`
+being the review's own session and the price matching the settled close
+(shadow-check's own `check()`; no settled close yet → no buy, because a frozen refresh
+looks exactly like that), the daily and weekly counts and the daily notional ceiling
+counted from the broker's order list **plus every approval still pending in the app**
+(an approval is not an order until Jack approves it, so the order list alone would let
+a re-run spend a slot twice), the session window, and `review_equity_order` reporting
+`customer_approval_required` with no `order_checks`. Each skip is named in the report.
+
+**What it trusts the review for.** The committed-add cap and the 20% position cap. Both
+need the fill history replayed, which is the review's job. At Level 1 the approval tap is
+what covers that trust. It is also the first thing Level 2 has to change: those two caps
+must be computed in code before any order skips the tap. So must the intraday kill
+switch, which nothing on this path reads yet.
+
+**Switched on by a local file, and dry by default.** `config/execution.local.json` with
+`{"scheduledPlacement": "approval-required"}` turns it on; no file, or any other value,
+is a dry run. A dry run still makes every read and the `review_equity_order` simulation,
+and reports what it would have submitted, so the first live day is not the first day
+the code meets live data.
+
+**Idempotent without relying on the broker.** A journal under `logs/executions/` records
+every submit, and a re-run the same day skips those symbols; so does an order or a pending
+approval on the symbol at the broker. A submit that errors, or answers with no approval
+or order id, is journaled as `uncertain`, reported as such, and never resent that day.
+`ref_id` is a UUIDv5 of account, session and symbol, so a retry would carry the same key.
+Whether Robinhood deduplicates approvals on it has not been confirmed, and nothing here
+depends on it.
+
+**Not decided here.** Sells stay confirm-only. Level 2 (approval off for orders the rules
+fully determine) is a later decision, and the record should make it: the journal, the
+trade log and the approvals Jack declines are the evidence for it. Not yet known, and to
+be checked on the first live days: how long a pending approval lasts before Robinhood
+expires it.

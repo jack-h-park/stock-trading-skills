@@ -3,6 +3,7 @@
 # Versioned, reproducible source for the jobs; each job itself lives in the trader
 # profile's runtime cron store once created.
 #
+#   agentic-execute weekdays 07:05 local  scripts/hermes/agentic-execute-cron.sh
 #   trading-review  weekdays 13:30 local  scripts/hermes/trading-review-cron.sh
 #   tax-calendar    weekdays 14:15 local  scripts/hermes/tax-calendar-cron.sh
 #
@@ -32,6 +33,9 @@
 # Then enable in the maintenance window, one job at a time:
 #   <hermes> --profile trader cron resume trading-review
 #   <hermes> --profile trader cron resume tax-calendar
+#   <hermes> --profile trader cron resume agentic-execute
+# agentic-execute submits nothing until config/execution.local.json switches it on
+# (docs/decisions.md §21); resumed without that file it reports a dry run.
 set -euo pipefail
 
 # Refuse to run anywhere but the host that declares itself the ops host. The
@@ -56,10 +60,13 @@ if [[ -z "$DELIVER" ]]; then
 fi
 PROFILE="trader"
 # name|schedule|wrapper. Times are the ops host's local zone (Pacific).
+#   agentic-execute: 07:05 = 10:05 ET, 35 min into the session after the review,
+#                   clear of the open's wide spreads.
 #   trading-review: 13:30 = 16:30 ET, 30 min after the US close.
 #   tax-calendar:   14:15, after the close and after the review, so the day's fills
 #                   and the review's own orders are in the windows it reports.
 JOB_SPECS=(
+  "agentic-execute|5 7 * * 1-5|agentic-execute-cron.sh"
   "trading-review|30 13 * * 1-5|trading-review-cron.sh"
   "tax-calendar|15 14 * * 1-5|tax-calendar-cron.sh"
 )
