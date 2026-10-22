@@ -30,8 +30,12 @@ those tools from tools/list so a caller never sees one to call. Used by:
     reconciliation work.
 
 AGENTIC-ORDERS MODE (--agentic-orders): the trader profile's `robinhood-orders`
-server, which carries the confirm-before-place order protocol. It relays only
-the six tools in AGENTIC_ORDER_TOOLS and hides the rest from tools/list. Option,
+server, which carries the confirm-before-place order protocol, and the server
+scripts/scheduled_orders.py submits through. It relays only the eight tools in
+AGENTIC_ORDER_TOOLS and hides the rest from tools/list. The two trade-approval
+reads are among them because scheduled_orders.py refuses to submit while
+Robinhood's own trade approval is off, and counts pending approvals against the
+order caps, through this same server. Option,
 crypto and exercise orders, watchlist and alert edits, scans and trade-approval
 declines are all refused. On top of that, review_equity_order,
 place_equity_order and cancel_equity_order are refused unless
@@ -96,6 +100,8 @@ AGENTIC_ORDER_TOOLS = frozenset({
     "get_accounts",
     "get_portfolio",
     "get_equity_orders",
+    "get_trade_approval_setting",
+    "get_trade_approvals",
     "review_equity_order",
     "place_equity_order",
     "cancel_equity_order",
@@ -209,7 +215,7 @@ def _strip_write_tools(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _strip_to_agentic_orders(payload: dict[str, Any]) -> dict[str, Any]:
-    """--agentic-orders counterpart of _strip_write_tools: keep the six, drop the rest."""
+    """--agentic-orders counterpart of _strip_write_tools: keep the eight, drop the rest."""
     result = payload.get("result")
     if not isinstance(result, dict):
         return payload

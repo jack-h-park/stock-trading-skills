@@ -12,7 +12,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER="$HERE/../scripts/hermes/install-cron.sh"
-JOBS=(trading-review tax-calendar)
+JOBS=(agentic-execute trading-review tax-calendar)
 FAIL=0
 ACCOUNT="$(id -un)"   # expanded up front: a substitution inside a check's arguments would clobber $?
 
@@ -104,6 +104,11 @@ grep '^cron create' "$FAKE_LOG" | grep -q -- '15 14 \* \* 1-5 --name tax-calenda
 check "tax-calendar: weekdays 14:15, its own --no-agent wrapper" $?
 [[ -x "$TEST_HOME/.hermes/profiles/trader/scripts/tax-calendar-cron.sh" ]]
 check "tax-calendar wrapper installed into the profile scripts dir" $?
+
+grep '^cron create' "$FAKE_LOG" | grep -q -- '5 7 \* \* 1-5 --name agentic-execute --script agentic-execute-cron.sh --no-agent'
+check "agentic-execute: weekdays 07:05, its own --no-agent wrapper" $?
+[[ -x "$TEST_HOME/.hermes/profiles/trader/scripts/agentic-execute-cron.sh" ]]
+check "agentic-execute wrapper installed into the profile scripts dir" $?
 
 # 4. no chat id in the tree
 ! grep -rEq 'telegram:-?[0-9]{6,}' "$INSTALLER"; check "installer carries no chat id" $?

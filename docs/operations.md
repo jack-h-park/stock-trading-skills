@@ -136,7 +136,9 @@ aren't lost). To hit 13:30 exactly, keep the iMac awake (Energy Saver) or schedu
 
 ## Placing a live trade (human-in-the-loop)
 
-Live orders never run from the cron. In an interactive session during regular hours:
+The review cron never places orders; the only scheduled path is `agentic-execute`
+below, and it submits for approval rather than placing. In an interactive session during
+regular hours:
 
 1. Ask the agent to execute the latest proposal (or a specific order).
 2. It recomputes signals on live prices (proposals can shift from the post-close report).
@@ -146,6 +148,30 @@ Live orders never run from the cron. In an interactive session during regular ho
 
 Per `config/guardrails.md`, every live order is confirm-before-place unless you have
 explicitly enabled standing authorization (off by default).
+
+## Scheduled submission for approval (`agentic-execute`)
+
+Weekdays at 07:05 PT, `scripts/hermes/agentic-execute-cron.sh` runs
+`scripts/scheduled_orders.py`. It takes the previous review's `autoEligible` buys,
+re-checks them (`docs/decisions.md` §21), and submits each one for approval in the
+Robinhood app. A one-message report goes to the trader channel; the approval request
+itself is Robinhood's own push notification.
+
+To switch it on, in this order:
+
+1. Robinhood app → Agentic account → Settings → **Trade approvals: on**. While it is
+   off the script submits nothing and says so.
+2. On the ops host: `printf '{"scheduledPlacement": "approval-required"}\n' >
+   config/execution.local.json`. Without this file every run is a dry run that reports
+   what it would have submitted.
+3. Resume the job: `<hermes> --profile trader cron resume agentic-execute`.
+
+To stop it: delete `config/execution.local.json` (back to dry run) or pause the job.
+Anything already submitted is declined in the Robinhood app.
+
+What it leaves behind: `logs/executions/<date>.json` (what it submitted, with the
+broker's id) and a `logs/trades/<date>.md` entry per order, confirmation
+`standing-auth`. Stderr goes to `logs/cron/<date>.execute.log`.
 
 ## Discord is send-only, and the proposals say otherwise
 

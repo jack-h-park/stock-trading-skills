@@ -30,17 +30,15 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
     auto-place does not, so the freshness that was implicit becomes a precondition.
   - Sells, trims, and any exit are **always confirm** (never auto).
 
-> **Where this authorization does and does not reach.** It is written for the
-> interactive agent, which holds `place_equity_order`. The scheduled review
-> (`scripts/run-review.sh`) does not: it reaches Robinhood through
-> `scripts/mcp-robinhood-proxy.py --read-only`, which refuses every write tool and
-> omits it from `tools/list`, so a cron job physically cannot trade. The job's own
-> `enabled_tools` list (`scripts/codex_args.py`) narrows it further to the seven reads
-> it needs, so a write fails at two independent points. So the standing
-> authorization has never fired from the scheduled path — every proposal it produces
-> waits for Jack to open a session, including the ones that are wholly determined by
-> the rules above. That gap is the subject of `docs/decisions.md` §16; nothing here
-> grants the scheduled path anything.
+> **Where this authorization does and does not reach.** Two paths act on it.
+> The interactive agent, which holds `place_equity_order`, and
+> `scripts/scheduled_orders.py` (the `agentic-execute` cron), which submits the
+> review's `autoEligible` buys the next morning. The scheduled review itself still
+> holds no order tool (`scripts/run-review.sh`). The scheduled path submits
+> **only while Robinhood's trade approval is on**, so every order it sends waits
+> for approval in the Robinhood app: it removes the session, not the approval. It
+> is dry until `config/execution.local.json` switches it on. Its re-checks, and
+> the two caps it trusts the review for, are in `docs/decisions.md` §21.
 
 > **Why market, not limit:** Robinhood notional ($-amount) and fractional orders are only
 > accepted as `type=market` in regular hours; limit orders require a whole/known share

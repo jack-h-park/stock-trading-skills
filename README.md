@@ -42,8 +42,10 @@ it for launchd, systemd, or a CI schedule and nothing in `strategy/`,
 The reason the split matters: **the automated path cannot trade, and the
 interactive path can.** `scripts/run-review.sh` whitelists only read tools, so
 the scheduled job physically cannot place an order. Execution happens only when
-a human asks for it in an interactive session — which is where the operator's
-agent runtime (Hermes here, whatever you use in your case) comes in.
+a human approves it: in an interactive session — which is where the operator's
+agent runtime (Hermes here, whatever you use in your case) comes in — or, for the
+buys the rules fully determine, by approving in the broker's app an order that
+`scripts/scheduled_orders.py` submitted the next morning (`docs/decisions.md` §21).
 
 ## Using it yourself
 
@@ -115,6 +117,7 @@ placed.
 | `providers/<broker>/adapter.md` | Maps broker tools ↔ the contract | **Yes** |
 | `providers/<broker>/capabilities.md` | What the broker can and cannot do | **Yes** |
 | `scripts/run-review.sh` | Headless runner: review + reconcile + digest | No |
+| `scripts/scheduled_orders.py` | Next-morning submitter: the review's auto-eligible buys, for approval in the broker app | Robinhood |
 | `scripts/tax_calendar.py` | Wash-sale windows from Robinhood and the Observatory, orders that touch them, planned-sale checks → `logs/tax-calendar/` | Robinhood |
 | `scripts/fill_reconcile.py` | Robinhood sell fills vs the Observatory's realized rows | Robinhood |
 | `scripts/analyst_facts.py` | Per-ticker analyst and earnings facts, no score | Robinhood |
@@ -191,7 +194,10 @@ cat logs/cron/$(date +%F).run.log     # what it did
   shell runs sandboxed with no network and no write access to `.git`. This is a
   structural property rather than an instruction the agent is asked to respect.
 - **Every live order is confirmed** unless `config/guardrails.md` grants standing
-  authorisation for a narrow, explicitly bounded case.
+  authorisation for a narrow, explicitly bounded case. The one scheduled path that
+  acts on that authorisation, `scripts/scheduled_orders.py`, submits only while the
+  broker's own trade approval is on, so its orders are still approved one by one —
+  in the broker's app rather than in a session. No model holds an order tool there.
 - **Nothing is accumulated locally.** The broker is the source of truth and is
   queried fresh on every run.
 - **An unlogged fill is caught after the fact.** The interactive path is where the
