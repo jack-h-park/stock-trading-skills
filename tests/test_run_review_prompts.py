@@ -78,15 +78,30 @@ def test_prompt_assignments_survive_set_u():
     assert proc.returncode == 0 and "evaluated" in proc.stdout, proc.stderr
 
 
-def test_the_reconcile_example_keeps_its_dollar_amounts():
+def _expanded(name: str) -> str:
     blocks = assignments(SCRIPT.read_text())
     prelude = "set -u\n" + "".join(f"{k}={v!r}\n" for k, v in EXPANDED.items())
     proc = subprocess.run(
-        ["bash", "-c", prelude + "\n".join(blocks.values()) + '\nprintf "%s" "$PROMPT_D"'],
+        ["bash", "-c", prelude + "\n".join(blocks.values()) + f'\nprintf "%s" "${name}"'],
         capture_output=True,
         text=True,
     )
-    assert "@ $100.00 (+1 sh, avg +$2.50)" in proc.stdout
+    return proc.stdout
+
+
+def test_the_digest_prompt_keeps_its_dollar_sign_and_writes_fragments_only():
+    prompt = _expanded("PROMPT_D")
+    assert "'US accounts: $X across N accounts'" in prompt
+    assert "logs/digest/2026-10-07.briefing.md" in prompt
+    assert "logs/digest/2026-10-07.reference-head.md" in prompt
+    assert "Do NOT write logs/digest/2026-10-07.agentic.md or logs/digest/2026-10-07.md" in prompt
+
+
+def test_the_reconcile_prompt_asks_for_the_record_the_digest_reads():
+    prompt = _expanded("PROMPT_B")
+    assert "logs/reconcile/2026-10-07.json" in prompt
+    for key in ('"alerts"', '"liveQty"', '"sheetAvg"', '"tradeLog"', '"filledInWindow"'):
+        assert key in prompt
 
 
 def test_wash_sale_windows_are_flagged_not_gated():

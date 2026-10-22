@@ -304,6 +304,15 @@ def test_record_level_refusals(repo, decision, conflict, why):
     assert why in "\n".join(lines)
 
 
+def test_a_redistribute_buy_is_a_buy(repo):
+    go_live(repo)
+    write_record(repo, [buy("VOO", kind="redistribute")])
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert "kind" not in "\n".join(lines)
+    assert broker.placed() != []
+
+
 def test_a_buy_beside_an_exit_on_the_same_symbol_is_refused(repo):
     go_live(repo)
     sell = {"side": "sell", "symbol": "GOOGL", "kind": "trim", "shares": 0.3,

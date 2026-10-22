@@ -25,7 +25,8 @@ What is re-checked here, in code, per order (anything that fails is skipped and
 named in the report):
 
   * the record targets today's session, was written before today, and the order
-    is autoEligible, a buy, kind buy, notional <= $100, no share quantity
+    is autoEligible, a buy, kind buy or redistribute, notional <= $100, no share
+    quantity
   * the symbol is in the universe parsed from strategy/policy.md
   * the symbol carries no departure, no decision request and no sell decision
     in the same record (one symbol, one direction)
@@ -94,6 +95,9 @@ except Exception:  # noqa: BLE001 — without tzdata there is no safe session cl
 # config/guardrails.md § Hard limits. Restated as numbers because this is the code
 # that enforces them; tests/test_scheduled_orders.py holds them to that table.
 MAX_NOTIONAL = 100.0
+# A REDISTRIBUTE buy is an ordinary buy against the caps (strategy/policy.md); the review
+# records it as its own kind so the digest can name it beside the TRIM that funds it.
+BUY_KINDS = ("buy", "redistribute")
 MAX_ORDERS_PER_DAY = 5
 MAX_ORDERS_PER_WEEK = 6
 MAX_NOTIONAL_PER_DAY = 1000.0
@@ -183,7 +187,7 @@ def select(record: dict[str, Any], symbols: set[str]) -> tuple[list[dict[str, An
             continue  # the review already says why in its own message
         notional = _number(d.get("notional"))
         reason = None
-        if d.get("kind") != "buy":
+        if d.get("kind") not in BUY_KINDS:
             reason = f"kind is {d.get('kind')!r}, not buy"
         elif sym not in symbols:
             reason = "not in the strategy/policy.md universe"

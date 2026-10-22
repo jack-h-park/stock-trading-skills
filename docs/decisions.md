@@ -463,3 +463,24 @@ fully determine) is a later decision, and the record should make it: the journal
 trade log and the approvals Jack declines are the evidence for it. Not yet known, and to
 be checked on the first live days: how long a pending approval lasts before Robinhood
 expires it.
+
+## 22. The digests are assembled in code; the model writes only what needs judgement (2026-10-22)
+
+**Decision.** `scripts/digest_lines.py` writes both digest files. It renders the sleeve and
+slots line, every proposal, block, departure and decision request, each exit's standing and
+tax term, the reconcile and unlogged-trade sections and the shadow check from the records
+the review already writes. Job B now also writes `logs/reconcile/<date>.json`. The digest
+model writes two fragments only: the briefing note and the head of the reference message.
+
+**Why.** Those lines were already copies of numbers in a file, retyped by the digest model
+from a format spelled out in its prompt, and the format did not hold. Over three
+consecutive sessions the sleeve value lost its thousands separator, one message ran its
+reconcile items into a single paragraph, the TRIM and take-profit lines changed places, and
+one unchanged departure was described three ways. A reader comparing today with yesterday
+could not tell a changed proposal from changed wording.
+
+**Chosen against.** Tightening the prompt again: the sleeve and exit lines already had an
+"exactly this form" rule and still drifted. Parsing job B's markdown tables: a second
+format the model controls. When a record is missing, its section says so in the message
+rather than disappearing, and a record the script cannot read still produces a message that
+names the failure.
