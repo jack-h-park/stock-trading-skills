@@ -18,7 +18,7 @@ makes the corrections himself (by decision). Two independent checks:
 - **B. Trade-log check** — filled **Agentic** orders at the broker vs **`logs/trades/`**.
   Covers the Agentic account only.
 
-They are separate on purpose: A is about positions Jack maintains by hand, B is about the
+They are separate on purpose: A is about the accounts Jack trades himself, B is about the
 decision journal for the account the agent trades. An account can be in scope for one and not
 the other, and the Agentic account is exactly that case.
 

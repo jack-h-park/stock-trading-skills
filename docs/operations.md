@@ -16,7 +16,9 @@ US Pacific time) so it isn't skipped when the laptop sleeps.
 ## Daily flow
 
 1. **Auto (13:30 PT):** the job writes `logs/reviews/<date>.md` (buy/sell proposals) and
-   `logs/reconcile/<date>.md` (sheet drift), and the digests. Read-only, and it commits
+   `logs/reconcile/<date>.md` (sheet drift), and the digests, which `scripts/digest_lines.py`
+   assembles from the day's JSON records (`decisions`, `signals`, `standing`, `tax`,
+   `logs/reconcile/<date>.json`). Read-only, and it commits
    nothing: `logs/` is gitignored because the journal names positions and balances.
 2. **You:** read the digest delivered by the scheduler, or the report on the host itself.
 3. **To act:** in an interactive session during market hours (PT 06:30–13:00), ask the

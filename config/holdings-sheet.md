@@ -1,8 +1,16 @@
 # Holdings sheet — reconciliation source
 
-The user maintains a manual master holdings sheet in Google Sheets. The agent reconciles
-**Robinhood live positions** against this sheet and reports drift. The agent does **not**
-write to the sheet (manual updates only, by decision).
+The holdings sheet in Google Sheets is the reconcile source. The agent reconciles
+**Robinhood live positions** against it and reports drift. The agent does **not** write to
+the sheet.
+
+Its tab is no longer kept by hand: the Observatory's `publish:us-sheet` step regenerates it
+on every refresh from the Observatory's own Robinhood snapshot (positions and tax lots read
+through the Robinhood MCP). So a Robinhood row that drifts from the sheet almost always means
+that snapshot is older than the trades, and the fix is to regenerate the snapshot, not to
+edit rows — an edited row is overwritten at the next refresh. The snapshot is written by an
+agent session that can reach the MCP; no cron writes it, and the Observatory's
+`robinhood_snapshot_fresh` health check reports its age.
 
 ## Sheet
 
