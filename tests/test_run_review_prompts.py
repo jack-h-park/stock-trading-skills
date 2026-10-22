@@ -128,3 +128,22 @@ def test_wash_sale_windows_are_flagged_not_gated():
     context = (REPO / "config" / "observatory-context.md").read_text()
     assert "`washSaleWindows.windows[]`" in context
     assert "It is still a flag, not a gate." in context
+
+
+def test_job_a_blocks_on_observatory_windows_through_the_tax_file():
+    """The cross-brokerage block reaches job A only through the tax file, and the
+    script hands tax_guard.py the same summary path the prompts read."""
+    text = SCRIPT.read_text()
+    assert '--observatory "$OBSERVATORY_SUMMARY"' in text
+    blocks = assignments(text)
+    prelude = "set -u\n" + "".join(f"{k}={v!r}\n" for k, v in EXPANDED.items())
+    proc = subprocess.run(
+        ["bash", "-c", prelude + "\n".join(blocks.values()) + '\nprintf "%s" "$PROMPT_A"'],
+        capture_output=True,
+        text=True,
+    )
+    prompt = proc.stdout
+    assert "one with source 'observatory' names the soldIn accounts" in prompt
+    assert "observatory.status is not 'ok'" in prompt
+    assert "observatory.stale is true" in prompt
+    assert "(−$140); clears Nov 9" in prompt
