@@ -76,6 +76,9 @@ def test_slots_count_agentic_buys_in_the_target_week():
     # A Friday review targets Monday: a fresh week whatever the last one spent.
     assert dl.slots_clause("2026-10-26", buys) == "slots for Monday: 5 of 5 today, 6 of 6 that week"
     assert "unavailable" in dl.slots_clause("2026-10-22", None)
+    # A tax file whose Robinhood half failed has no recentBuys: unknown, never zero fills.
+    assert "unavailable" in dl.slots_clause("2026-10-22", {"robinhood": {"status": "failed: x"},
+                                                           "buyBlocks": {}})
 
 
 def test_the_daily_count_never_exceeds_what_the_week_has_left():

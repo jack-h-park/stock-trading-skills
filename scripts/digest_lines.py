@@ -134,7 +134,8 @@ def slots_clause(target: str | None, tax: dict[str, Any] | None) -> str:
         return "slots unavailable (no target session in the decision record)"
     day = dt.date.fromisoformat(target)
     weekday = f"{day:%A}"
-    if tax is None:
+    # A tax file whose Robinhood half failed carries no recentBuys at all: unknown, not zero.
+    if tax is None or "recentBuys" not in tax:
         return f"slots for {weekday} unavailable (no fill data today)"
     monday = day - dt.timedelta(days=day.weekday())
     week = today = 0

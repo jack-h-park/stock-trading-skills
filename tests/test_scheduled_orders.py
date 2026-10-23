@@ -416,6 +416,28 @@ def test_a_symbol_in_a_wash_sale_window_is_refused(repo):
     assert "wash-sale window until 2026-11-01" in "\n".join(lines)
 
 
+def test_a_tax_file_whose_robinhood_half_failed_blocks_every_buy(repo):
+    go_live(repo)
+    write_record(repo, [buy("VOO")], tax={"robinhood": {"status": "failed: proxy down"},
+                                          "buyBlocks": {}})
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert broker.calls == []
+    assert "no tax facts" in "\n".join(lines)
+
+
+def test_an_observatory_block_names_the_brokerage(repo):
+    go_live(repo)
+    write_record(repo, [buy("VOO"), buy("MSFT")], tax={
+        "robinhood": {"status": "ok"},
+        "buyBlocks": {"MSFT": {"source": "observatory", "soldIn": ["Fidelity ••1234"],
+                               "clears": "2026-11-01"}}})
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert broker.placed() == ["VOO"]
+    assert "wash-sale window until 2026-11-01 (loss sale at Fidelity ••1234)" in "\n".join(lines)
+
+
 def test_missing_tax_facts_block_every_buy(repo):
     go_live(repo)
     write_record(repo, [buy("VOO")], tax={})
