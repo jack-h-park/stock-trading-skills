@@ -147,3 +147,4 @@ def test_job_a_blocks_on_observatory_windows_through_the_tax_file():
     assert "observatory.status is not 'ok'" in prompt
     assert "observatory.stale is true" in prompt
     assert "(−$140); clears Nov 9" in prompt
+    assert "If robinhood.status in the file is not 'ok', the Robinhood half failed" in prompt

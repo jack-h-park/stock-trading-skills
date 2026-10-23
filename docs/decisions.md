@@ -404,6 +404,15 @@ nears long-term: the rate gain depends on the year's other income, which the rev
 see, so the date is shown and the choice left with the person confirming. Recording sales
 at other brokers by hand: out of scope until there is a reason to trade those symbols here.
 
+**Amended (2026-10-23).** Sales at other brokers are covered after all, from the
+Observatory's `washSaleWindows` rather than by hand: `tax_guard.py` merges every window
+still open into `buyBlocks`, tagged `source: "observatory"`. That made the Robinhood half
+no longer the only source, so its failure no longer drops the file: the Observatory's blocks
+are written alone, with `robinhood.status` giving the failure and `lossSales`, `recentBuys`
+and `lots` left out. Such a file is incomplete and is read that way: `scheduled_orders.py`
+submits nothing on it, `digest_lines.py` reports the slots unavailable, and job A still
+applies the blocks it does hold.
+
 
 ## 21. Level 1: auto-eligible buys are submitted for approval in the Robinhood app (2026-10-15)
 

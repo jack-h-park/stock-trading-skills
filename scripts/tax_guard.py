@@ -34,7 +34,12 @@ wash-sale rule; both guards are about the US return only.
 
 usage: tax_guard.py --repo PATH --python PY --proxy PATH [--observatory FILE]
                     [--out FILE] [--date YYYY-MM-DD]
-Exit 0 with no file on any failure: job A then says the tax facts are unavailable.
+Always exits 0. When the Robinhood half fails, the file is still written with the
+Observatory's blocks alone and robinhood.status saying why; lossSales, recentBuys and
+lots are then ABSENT, not empty, so no reader can take "no data" for "no sales". Every
+reader must treat such a file as incomplete (scheduled_orders.py blocks every buy on
+it, digest_lines.py reports the slots unavailable). When the Observatory gives nothing
+either, no file is written: job A then says the tax facts are unavailable.
 Python 3.9 compatible.
 """
 
@@ -206,8 +211,8 @@ def _pages(proxy: Proxy, tool: str, args: dict[str, Any], key: str) -> list[dict
     return out
 
 
-def collect(proxy: Proxy, accts: dict[str, str], today: datetime.date,
-            observatory: str | None = None) -> dict[str, Any]:
+def robinhood_facts(proxy: Proxy, accts: dict[str, str],
+                    today: datetime.date) -> dict[str, Any]:
     loss_sales: list[dict[str, Any]] = []
     buys: list[dict[str, Any]] = []
     since = (today - datetime.timedelta(days=WINDOW_DAYS + 1)).isoformat()
@@ -238,17 +243,35 @@ def collect(proxy: Proxy, accts: dict[str, str], today: datetime.date,
             if terms:
                 lots[sym] = terms
 
-    summary, status = read_observatory(observatory)
     return {
-        "asOf": today.isoformat(),
         "accountsCovered": sorted(accts),
         "lossSales": sorted(loss_sales, key=lambda s: (s["date"], s["symbol"])),
-        "buyBlocks": merge_blocks(buy_blocks(loss_sales, today),
-                                  observatory_blocks(summary, today)),
-        "observatory": observatory_status(summary, status, today),
         "recentBuys": recent_buys(buys, today),
         "lots": lots,
     }
+
+
+def assemble(rh: dict[str, Any] | None, rh_status: str, observatory: str | None,
+             today: datetime.date) -> dict[str, Any] | None:
+    """The tax file. `rh` None means the Robinhood half failed: the Observatory's blocks
+    are still written, and the Robinhood keys are left out. None when neither half
+    has anything to say."""
+    summary, status = read_observatory(observatory)
+    if rh is None and summary is None:
+        return None
+    rh_blocks = buy_blocks(rh["lossSales"], today) if rh else {}
+    return {
+        "asOf": today.isoformat(),
+        **(rh or {}),
+        "robinhood": {"status": rh_status},
+        "buyBlocks": merge_blocks(rh_blocks, observatory_blocks(summary, today)),
+        "observatory": observatory_status(summary, status, today),
+    }
+
+
+def collect(proxy: Proxy, accts: dict[str, str], today: datetime.date,
+            observatory: str | None = None) -> dict[str, Any] | None:
+    return assemble(robinhood_facts(proxy, accts, today), "ok", observatory, today)
 
 
 def main() -> int:
@@ -261,17 +284,26 @@ def main() -> int:
     ap.add_argument("--date")
     args = ap.parse_args()
     today = datetime.date.fromisoformat(args.date) if args.date else datetime.date.today()
+    rh, rh_status = None, "ok"
     try:
         accts = accounts((Path(args.repo) / "config" / "accounts.local.md").read_text())
         if not accts:
             raise RuntimeError("no account found in config/accounts.local.md")
         proxy = Proxy(args.python, args.proxy)
         try:
-            doc = collect(proxy, accts, today, args.observatory)
+            rh = robinhood_facts(proxy, accts, today)
         finally:
             proxy.close()
+    except Exception as e:  # noqa: BLE001 — the Observatory's blocks still stand
+        rh_status = f"failed: {e}"
+        sys.stderr.write(f"tax_guard: {e} — no Robinhood tax facts today\n")
+    try:
+        doc = assemble(rh, rh_status, args.observatory, today)
     except Exception as e:  # noqa: BLE001 — job A reports the facts as unavailable
         sys.stderr.write(f"tax_guard: {e} — no tax facts today\n")
+        return 0
+    if doc is None:
+        sys.stderr.write("tax_guard: neither Robinhood nor the Observatory — no tax facts today\n")
         return 0
     text = json.dumps(doc, indent=1, sort_keys=True)
     if args.out:

@@ -231,18 +231,25 @@ def price_verdicts(record: dict[str, Any], db: str) -> dict[str, str]:
 
 
 def wash_sale_blocks(record_path: Path, today: str) -> dict[str, str] | None:
-    """{symbol: reason} from the review's <date>.tax.json; None when it is missing.
+    """{symbol: reason} from the review's <date>.tax.json; None when it is missing
+    or its Robinhood half failed.
 
     docs/decisions.md §20: a buy is blocked while any Robinhood account sold the
-    symbol at a loss in the last 30 days. The review applies that when it sets
+    symbol at a loss in the last 30 days, and while the Observatory shows a loss sale
+    of it at any other brokerage. The review applies that when it sets
     autoEligible; this repeats the check against the same file, so a record written
     while the guard was down cannot slip a blocked buy through. Missing facts block
-    everything, because a lost deduction does not announce itself.
+    everything, because a lost deduction does not announce itself — and so does a
+    file whose Robinhood half failed, which holds only the other brokerages' windows.
     """
     path = record_path.with_name(record_path.name.replace(".decisions.json", ".tax.json"))
     try:
         doc = json.loads(path.read_text())
     except (OSError, ValueError):
+        return None
+    # Files from before robinhood.status existed were complete or not written at all.
+    rh = doc.get("robinhood") if isinstance(doc, dict) else None
+    if isinstance(rh, dict) and rh.get("status") != "ok":
         return None
     out: dict[str, str] = {}
     for sym, b in (doc.get("buyBlocks") or {}).items():
@@ -253,7 +260,9 @@ def wash_sale_blocks(record_path: Path, today: str) -> dict[str, str] | None:
             out[str(sym)] = "wash-sale block with no readable clearing date"
             continue
         if clears > today:
-            out[str(sym)] = f"wash-sale window until {clears} (loss sale {b.get('date')})"
+            sale = (f"loss sale at {', '.join(b.get('soldIn') or []) or 'another brokerage'}"
+                    if b.get("source") == "observatory" else f"loss sale {b.get('date')}")
+            out[str(sym)] = f"wash-sale window until {clears} ({sale})"
     return out
 
 

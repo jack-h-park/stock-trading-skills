@@ -117,6 +117,7 @@ def test_end_to_end_through_a_read_only_proxy(tmp_path):
     assert doc["buyBlocks"]["FIG"]["source"] == "robinhood"
     assert doc["buyBlocks"]["XYZ"]["source"] == "observatory"
     assert doc["observatory"]["status"] == "ok"
+    assert doc["robinhood"] == {"status": "ok"}
     assert doc["buyBlocks"]["FIG"]["clears"] == "2026-11-09"
     assert [b["date"] for b in doc["recentBuys"]["IBM"]] == ["2026-10-06", "2026-10-06"]
     assert doc["lots"]["META"]["oldestLongTermFrom"] == "2027-06-24"
@@ -175,3 +176,34 @@ def test_a_lagging_summary_is_marked_stale():
     assert (stale["missingWeekdays"], stale["stale"]) == (5, True)
     assert tg.observatory_status(_summary([], through=None), "ok", D("2026-10-13"))["stale"]
     assert tg.observatory_status(None, "missing", D("2026-10-13")) == {"status": "missing"}
+
+
+def test_a_failed_robinhood_half_still_writes_the_observatory_blocks(tmp_path):
+    summary = tmp_path / "briefing-summary.json"
+    summary.write_text(json.dumps(_summary([_window("XYZ", "2026-11-08", "2026-11-09")])))
+    doc = tg.assemble(None, "failed: proxy down", str(summary), D("2026-10-13"))
+    assert set(doc["buyBlocks"]) == {"XYZ"}
+    assert doc["robinhood"] == {"status": "failed: proxy down"}
+    # Absent, not empty: no reader may take "no data" for "no sales" or "no fills".
+    assert not {"lossSales", "recentBuys", "lots", "accountsCovered"} & set(doc)
+
+
+def test_no_file_when_neither_half_has_anything(tmp_path):
+    assert tg.assemble(None, "failed: x", str(tmp_path / "missing.json"), D("2026-10-13")) is None
+
+
+def test_main_writes_the_observatory_blocks_when_the_accounts_are_missing(tmp_path):
+    summary = tmp_path / "briefing-summary.json"
+    summary.write_text(json.dumps(_summary([_window("XYZ", "2026-11-08", "2026-11-09")])))
+    out = tmp_path / "tax.json"
+    (tmp_path / "config").mkdir()                          # no accounts.local.md in it
+    argv = sys.argv
+    sys.argv = ["tax_guard.py", "--repo", str(tmp_path), "--proxy", "unused",
+                "--observatory", str(summary), "--out", str(out), "--date", "2026-10-13"]
+    try:
+        assert tg.main() == 0
+    finally:
+        sys.argv = argv
+    doc = json.loads(out.read_text())
+    assert doc["robinhood"]["status"].startswith("failed: ")
+    assert set(doc["buyBlocks"]) == {"XYZ"}
