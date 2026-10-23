@@ -493,3 +493,13 @@ could not tell a changed proposal from changed wording.
 format the model controls. When a record is missing, its section says so in the message
 rather than disappearing, and a record the script cannot read still produces a message that
 names the failure.
+
+**Amended 2026-10-22: the review was marking nothing auto-eligible.** Ten sessions in
+a row produced zero `autoEligible` buys. The 10-22 QQQM buy was clean on every count
+and was still marked false, with "next-session proposal requires fresh regular-session
+authorization check". The review read two standing-authorization lines about the
+moment of placement ("within regular session hours" and "a settled close under 24h old
+or a live quote") as conditions on itself. A review that runs after the close can never
+meet them, so Level 1 would never have had anything to submit. The prompt now judges
+both lines for `targetSession` and leaves the live check to the submitter, which
+already enforces both: the session window, and `priceUsed` against the settled close.
