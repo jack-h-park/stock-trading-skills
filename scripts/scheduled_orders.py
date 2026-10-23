@@ -38,6 +38,9 @@ named in the report):
   * the daily and weekly order counts and the daily notional ceiling, counted
     from the broker's order list plus every approval still pending in the app
   * the regular session is open
+  * when the close the review priced from is over 24h old (a Monday after a
+    Friday review), the entry still holds on the live quote review_equity_order
+    returns: at least 5% below the review's 20-day high from <date>.signals.json
   * review_equity_order reports customer_approval_required and no order_checks
 
 What is NOT re-derived here, and is trusted from the review: the committed-add
@@ -110,6 +113,13 @@ SESSION_CLOSE = datetime.time(15, 45)
 
 # Orders in these states never became a trade and do not use up a slot.
 DEAD_STATES = frozenset({"cancelled", "rejected", "failed", "voided"})
+
+# strategy/policy.md entry rule, and the guardrail's freshness window. A close
+# older than FRESH_HOURS at submit time (Monday, after a Friday review) does not
+# satisfy "a settled close under 24h old", so the entry is re-confirmed on the
+# live quote review_equity_order returns: the guardrail's own "or a live quote".
+ENTRY_DRAWDOWN_PCT = 5.0
+FRESH_HOURS = 24.0
 
 LIVE_MODE = "approval-required"
 REF_NAMESPACE = uuid.UUID("6f1c2a6e-3b7d-4f43-9d55-2f6b8c1e0a19")
@@ -264,6 +274,53 @@ def wash_sale_blocks(record_path: Path, today: str) -> dict[str, str] | None:
                     if b.get("source") == "observatory" else f"loss sale {b.get('date')}")
             out[str(sym)] = f"wash-sale window until {clears} ({sale})"
     return out
+
+
+def load_highs(record_path: Path) -> dict[str, float]:
+    """{symbol: 20-day high} from the review's <date>.signals.json, or empty."""
+    path = record_path.with_name(record_path.name.replace(".decisions.json", ".signals.json"))
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, float] = {}
+    for sym, v in (doc.get("symbols") or {}).items():
+        high = _number(v.get("high")) if isinstance(v, dict) else None
+        if high and high > 0:
+            out[str(sym)] = high
+    return out
+
+
+def close_age_hours(price_as_of: str, now: datetime.datetime) -> float | None:
+    """Hours since the 16:00 ET close of `price_as_of`, or None if unreadable."""
+    try:
+        day = datetime.date.fromisoformat(str(price_as_of))
+    except ValueError:
+        return None
+    close = datetime.datetime.combine(day, datetime.time(16, 0), tzinfo=ET)
+    return (now - close).total_seconds() / 3600
+
+
+def live_price(review: Any) -> float | None:
+    """The current price review_equity_order returned with its simulation."""
+    for key in ("last_trade_price", "ask_price", "price"):
+        n = _number(_find(review, key))
+        if n is not None and n > 0:
+            return n
+    return None
+
+
+def live_recheck(review: Any, high: float | None) -> tuple[str | None, str]:
+    """(skip reason or None, note) for an entry decided on a close that is stale now."""
+    live = live_price(review)
+    if live is None or not high:
+        return ("the close is over 24h old and there is no live quote to re-check the "
+                "entry against", "")
+    dd = (high - live) / high * 100
+    if dd < ENTRY_DRAWDOWN_PCT:
+        return (f"live re-check: {dd:.2f}% below the 20-day high {high:g}, under the "
+                f"{ENTRY_DRAWDOWN_PCT:g}% entry", "")
+    return None, f"live re-check {live:g}, {dd:.2f}% below {high:g}"
 
 
 # ── broker reads ──────────────────────────────────────────────────────────────
@@ -516,6 +573,10 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
         return 1, [f"⚠️ {tag} {today}: the Agentic account could not be resolved from "
                    "config/accounts.local.md; nothing submitted."]
 
+    age = close_age_hours(str(record.get("priceAsOf")), now)
+    stale = age is None or age > FRESH_HOURS
+    highs = load_highs(record_path) if stale else {}
+
     journal_path = repo / "logs" / "executions" / f"{today}.json"
     journal = read_journal(journal_path)
     done = {o.get("symbol") for o in journal.get("orders") or []
@@ -568,8 +629,15 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
             if why:
                 skipped.append((sym, why))
                 continue
+            note = ""
+            if stale:
+                why, note = live_recheck(review, highs.get(sym))
+                if why:
+                    skipped.append((sym, why))
+                    continue
+                note = f" ({note})"
             if not live:
-                results.append(f"  would submit: buy {sym} ${c['notional']:.2f}")
+                results.append(f"  would submit: buy {sym} ${c['notional']:.2f}{note}")
                 slots -= 1
                 room -= c["notional"]
                 continue
@@ -602,7 +670,7 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
             write_trade_log(repo, today, now, c, "customer_approval_required; no order checks",
                             f"submitted for approval, id {ident}")
             submitted += 1
-            results.append(f"  submitted: buy {sym} ${c['notional']:.2f} (id {ident})")
+            results.append(f"  submitted: buy {sym} ${c['notional']:.2f} (id {ident}){note}")
     finally:
         close = getattr(client, "close", None)
         if close:

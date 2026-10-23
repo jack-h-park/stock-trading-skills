@@ -503,3 +503,14 @@ or a live quote") as conditions on itself. A review that runs after the close ca
 meet them, so Level 1 would never have had anything to submit. The prompt now judges
 both lines for `targetSession` and leaves the live check to the submitter, which
 already enforces both: the session window, and `priceUsed` against the settled close.
+
+A day later the 10-23 review gave the second half of the same misreading: "Monday
+execution needs fresh regular-session pricing; Friday close exceeds 24h then." That
+one is literally true. A Friday close is about 66h old at Monday 10:05 ET, so it does
+not meet "a settled close under 24h old". The guardrail's own alternative is "or a live
+quote", and the submitter now uses it. When the close is past 24h, the live price that
+`review_equity_order` returns must still be at least 5% below the review's 20-day high
+(from `<date>.signals.json`). Otherwise the order is skipped, and so is one where the
+quote or the high is missing. The high comes from the review's window, which is one session behind Monday's. It is
+off by at most one bar either way. That is noted here and not corrected, because
+correcting it would mean recomputing the window, which `signal_windows.py` owns.
