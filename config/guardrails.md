@@ -39,6 +39,15 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
 > for approval in the Robinhood app: it removes the session, not the approval. It
 > is dry until `config/execution.local.json` switches it on. Its re-checks, and
 > the two caps it trusts the review for, are in `docs/decisions.md` §21.
+>
+> **When the session-hours and price-freshness lines are judged.** The review
+> runs after the close, so both are judged for the session the order will
+> execute in, and `scripts/scheduled_orders.py` checks both again when it
+> submits. When the close is over 24h old by then (a Monday after a Friday
+> review), the submitter takes the line's other branch, "or a live quote": the
+> live price from `review_equity_order` must still sit at least 5% below the
+> review's 20-day high, or the order is skipped. Until 2026-10-22 the review read them as unmet at review time and
+> marked no buy auto-eligible for ten sessions; that is why this says so.
 
 > **Why market, not limit:** Robinhood notional ($-amount) and fractional orders are only
 > accepted as `type=market` in regular hours; limit orders require a whole/known share

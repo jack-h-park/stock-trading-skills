@@ -549,3 +549,69 @@ def test_the_universe_is_read_from_policy():
     from signal_windows import universe
     syms = universe((REPO / "strategy" / "policy.md").read_text())
     assert set(syms) == {"AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "VOO", "QQQM"}
+
+
+# ── a close older than 24h is re-checked on the live quote ───────────────────
+
+# Monday 2026-10-19 10:05 ET, executing a Friday 2026-10-16 review: the close is ~66h old.
+MONDAY = datetime.datetime(2026, 10, 19, 14, 5, tzinfo=datetime.timezone.utc)  # noqa: UP017
+FRIDAY = "2026-10-16"
+
+
+def friday_record(repo: Path, high: float | None = 540.0) -> None:
+    make_db(repo / "obs.db", SETTLED, date=FRIDAY)
+    write_record(repo, [buy("VOO")], date=FRIDAY, target="2026-10-19")
+    if high is not None:
+        (repo / "logs" / "reviews" / f"{FRIDAY}.signals.json").write_text(json.dumps(
+            {"symbols": {"VOO": {"high": high, "price": 500.0, "drawdownPct": 7.41}}}))
+
+
+def quoted(price: float | None) -> dict[str, Any]:
+    data: dict[str, Any] = {"customer_approval_required": True, "order_checks": []}
+    if price is not None:
+        data["quote"] = {"last_trade_price": str(price)}
+    return {"data": data}
+
+
+def test_monday_submits_when_the_live_quote_still_shows_the_dip(repo):
+    go_live(repo)
+    friday_record(repo)
+    broker = FakeBroker(review=quoted(505.0))  # 6.48% below 540
+    _, lines = run(repo, broker, now=MONDAY)
+    assert broker.placed() == ["VOO"]
+    assert "live re-check 505, 6.48% below 540" in "\n".join(lines)
+
+
+def test_monday_skips_when_the_dip_closed_over_the_weekend(repo):
+    go_live(repo)
+    friday_record(repo)
+    broker = FakeBroker(review=quoted(520.0))  # 3.70% below 540
+    _, lines = run(repo, broker, now=MONDAY)
+    assert broker.placed() == []
+    assert "live re-check: 3.70% below the 20-day high 540" in "\n".join(lines)
+
+
+@pytest.mark.parametrize("price,high", [(None, 540.0), (505.0, None)])
+def test_monday_without_a_quote_or_a_high_submits_nothing(repo, price, high):
+    go_live(repo)
+    friday_record(repo, high=high)
+    broker = FakeBroker(review=quoted(price))
+    _, lines = run(repo, broker, now=MONDAY)
+    assert broker.placed() == []
+    assert "no live quote to re-check" in "\n".join(lines)
+
+
+def test_a_next_morning_close_needs_no_live_recheck(repo):
+    # Thursday 10:05 ET on a Wednesday close is 18h: fresh, and no quote is needed.
+    go_live(repo)
+    write_record(repo, [buy("VOO")])
+    broker = FakeBroker(review=quoted(None))
+    run(repo, broker)
+    assert broker.placed() == ["VOO"]
+    assert so.close_age_hours(YESTERDAY, NOW) == pytest.approx(18.0833, abs=0.01)
+
+
+def test_the_entry_threshold_is_policy_entry_rule():
+    text = (REPO / "strategy" / "policy.md").read_text()
+    m = re.search(r"\*\*≥ (\d+)% below its trailing 20-day high\*\*", text)
+    assert m and float(m.group(1)) == so.ENTRY_DRAWDOWN_PCT

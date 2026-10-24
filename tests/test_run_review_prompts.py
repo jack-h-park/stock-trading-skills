@@ -148,3 +148,25 @@ def test_job_a_blocks_on_observatory_windows_through_the_tax_file():
     assert "observatory.stale is true" in prompt
     assert "(−$140); clears Nov 9" in prompt
     assert "If robinhood.status in the file is not 'ok', the Robinhood half failed" in prompt
+
+
+def test_placement_time_conditions_are_judged_for_the_target_session():
+    """The review runs after the close. If it reads 'regular session hours' as a
+    condition on itself, no buy is ever auto-eligible (2026-10-12..22: zero in ten
+    sessions), and the submitter has nothing to act on. The submitter is what
+    checks the session and the settled close, so the prompt must hand both to it.
+    """
+    text = SCRIPT.read_text()
+    assert "judge both for targetSession" in text
+    assert "scripts/scheduled_orders.py checks both again when it submits" in text
+    import sys
+    sys.path.insert(0, str(REPO / "scripts"))
+    import datetime
+
+    import scheduled_orders as so
+    utc = datetime.timezone.utc  # noqa: UP017
+    # ...and the submitter really does enforce both: outside the window it stops,
+    assert not so.in_session(datetime.datetime(2026, 10, 22, 20, 30, tzinfo=utc))
+    assert so.in_session(datetime.datetime(2026, 10, 23, 14, 5, tzinfo=utc))
+    # and only an "ok" settled-close verdict passes its price check.
+    assert "if v == \"ok\":" in (REPO / "scripts" / "scheduled_orders.py").read_text()
