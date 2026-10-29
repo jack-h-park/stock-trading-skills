@@ -514,3 +514,20 @@ quote", and the submitter now uses it. When the close is past 24h, the live pric
 quote or the high is missing. The high comes from the review's window, which is one session behind Monday's. It is
 off by at most one bar either way. That is noted here and not corrected, because
 correcting it would mean recomputing the window, which `signal_windows.py` owns.
+
+**Amended 2026-10-28: the other-brokerage half of the wash-sale facts.** The
+Observatory holds the wash-sale windows for every brokerage except Robinhood. It is
+built from statements filed by hand, so it usually trails by a few days: on 10-28 it
+reached only 10-22 and read `stale`. The submitter now separates two cases:
+
+- **No usable summary** (no `observatory` status in `tax.json`, or any status other
+  than `ok`): no buy is submitted. This is the same rule as a missing tax file or a
+  failed Robinhood half.
+- **A stale summary**: buys still go out, and both the report and the trade-log entry
+  name the date that other brokerages were checked through.
+
+Blocking on staleness would block most days. At Level 1 the person approving in the
+app is the check for the days the summary cannot see yet, and they are also the
+person who would have made such a sale. Level 2 has no such person, so before
+approvals can go away it must either block on staleness or have the Observatory
+filed promptly.

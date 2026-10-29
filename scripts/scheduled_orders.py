@@ -31,7 +31,8 @@ named in the report):
   * the symbol carries no departure, no decision request and no sell decision
     in the same record (one symbol, one direction)
   * the symbol is outside every wash-sale window in the review's <date>.tax.json
-    (§20); a missing tax file blocks every buy
+    (§20); a missing tax file, a failed Robinhood half or no usable Observatory
+    summary blocks every buy, and a stale Observatory adds a warning to the report
   * the record's priceAsOf is its own session, and the price the decision used
     matches the settled close (scripts/shadow-check.py's own comparison, not a
     second implementation); no settled close yet means no order
@@ -274,6 +275,42 @@ def wash_sale_blocks(record_path: Path, today: str) -> dict[str, str] | None:
                     if b.get("source") == "observatory" else f"loss sale {b.get('date')}")
             out[str(sym)] = f"wash-sale window until {clears} ({sale})"
     return out
+
+
+def observatory_coverage(record_path: Path) -> tuple[str | None, str | None]:
+    """(block reason, warning) for the other-brokerage half of the tax facts.
+
+    The Observatory supplies wash-sale windows for every brokerage but Robinhood,
+    from statements that are filed by hand, so it routinely trails by a few days.
+    Two cases are treated differently on purpose (docs/decisions.md §21):
+
+      * no usable Observatory summary at all (absent, missing, unreadable,
+        refused): every buy is blocked, the same as a missing tax file;
+      * a usable summary that is stale: buys proceed, and the report says through
+        which date other brokerages were checked. Blocking on staleness would
+        block most days, since filing lags by design; at Level 1 the person
+        approving in the app is the check for the days the summary cannot see.
+
+    A missing tax file is wash_sale_blocks' to report, so it returns (None, None).
+    """
+    path = record_path.with_name(record_path.name.replace(".decisions.json", ".tax.json"))
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None, None
+    obs = doc.get("observatory") if isinstance(doc, dict) else None
+    if not isinstance(obs, dict):
+        return "tax facts carry no Observatory status (other brokerages unchecked)", None
+    if obs.get("status") != "ok":
+        return (f"other brokerages unchecked: Observatory {str(obs.get('status'))[:80]}", None)
+    if obs.get("stale") is not False:
+        through = obs.get("transactionsThrough") or "an unknown date"
+        gap = obs.get("missingWeekdays")
+        gap_text = f", {gap} weekday(s) not yet filed" if isinstance(gap, int) else ""
+        return None, (f"other brokerages' sales are checked only through {through}{gap_text}. "
+                      "Before approving, make sure none of these was sold at a loss at "
+                      "another brokerage since then")
+    return None, None
 
 
 def load_highs(record_path: Path) -> dict[str, float]:
@@ -527,6 +564,12 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
 
     symbols = set(universe((repo / "strategy" / "policy.md").read_text()))
     candidates, skipped = select(record, symbols)
+    coverage_warning: str | None = None
+    if candidates:
+        block, coverage_warning = observatory_coverage(record_path)
+        if block:
+            skipped += [(c["symbol"], block) for c in candidates]
+            candidates = []
     if candidates:
         blocks = wash_sale_blocks(record_path, today)
         kept = []
@@ -667,7 +710,8 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
                 results.append(f"  ⚠️ {sym}: outcome unknown ({error}); check the Robinhood "
                                "app — a re-run today will not resubmit it")
                 continue
-            write_trade_log(repo, today, now, c, "customer_approval_required; no order checks",
+            write_trade_log(repo, today, now, c, "customer_approval_required; no order checks"
+                            + (f"; {coverage_warning}" if coverage_warning else ""),
                             f"submitted for approval, id {ident}")
             submitted += 1
             results.append(f"  submitted: buy {sym} ${c['notional']:.2f} (id {ident}){note}")
@@ -686,6 +730,8 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
     else:
         lines.append(f"{tag} {today}: {len(results)} order(s) would be submitted for approval.")
     lines += results
+    if results and coverage_warning:
+        lines.append(f"  ⚠️ {coverage_warning}.")
     lines += [f"  skipped {s}: {r}" for s, r in skipped]
     return 0, lines
 

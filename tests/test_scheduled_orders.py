@@ -115,10 +115,19 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+COMPLETE_TAX: dict[str, Any] = {
+    "robinhood": {"status": "ok"},
+    "observatory": {"status": "ok", "stale": False, "transactionsThrough": YESTERDAY,
+                    "missingWeekdays": 0},
+    "buyBlocks": {},
+}
+
+
 def write_record(repo: Path, decisions: list[dict[str, Any]], date: str = YESTERDAY,
                  target: str = TODAY, tax: dict[str, Any] | None = None,
                  **extra: Any) -> None:
-    tax = {"buyBlocks": {}} if tax is None else tax
+    # A complete file as tax_guard.py writes it today; a test overrides only what it is about.
+    tax = {**COMPLETE_TAX, **(tax or {})}
     doc = {"date": date, "targetSession": target, "priceAsOf": date,
            "decisions": decisions, "blocked": [], "departures": [], "decisionRequests": []}
     doc.update(extra)
@@ -446,6 +455,51 @@ def test_missing_tax_facts_block_every_buy(repo):
     _, lines = run(repo, broker)
     assert broker.calls == []
     assert "no tax facts" in "\n".join(lines)
+
+
+# ── other brokerages: blocked when unknown, warned when stale ────────────────
+
+@pytest.mark.parametrize("observatory,why", [
+    (None, "carry no Observatory status"),
+    ({"status": "missing"}, "Observatory missing"),
+    ({"status": "refused: schemaVersion 9"}, "Observatory refused"),
+])
+def test_no_usable_observatory_blocks_every_buy(repo, observatory, why):
+    go_live(repo)
+    write_record(repo, [buy("VOO")], tax={"observatory": observatory})
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert broker.calls == []
+    assert why in "\n".join(lines)
+
+
+def test_a_stale_observatory_submits_with_a_warning(repo):
+    go_live(repo)
+    write_record(repo, [buy("VOO")], tax={"observatory": {
+        "status": "ok", "stale": True, "transactionsThrough": "2026-10-09",
+        "missingWeekdays": 4}})
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert broker.placed() == ["VOO"]
+    text = "\n".join(lines)
+    assert "checked only through 2026-10-09, 4 weekday(s) not yet filed" in text
+    log = (repo / "logs" / "trades" / f"{TODAY}.md").read_text()
+    assert "checked only through 2026-10-09" in log
+
+
+def test_a_fresh_observatory_adds_no_warning(repo):
+    go_live(repo)
+    write_record(repo, [buy("VOO")])
+    _, lines = run(repo, FakeBroker())
+    assert "checked only through" not in "\n".join(lines)
+
+
+def test_the_stale_warning_appears_in_a_dry_run_too(repo):
+    write_record(repo, [buy("VOO")], tax={"observatory": {
+        "status": "ok", "stale": True, "transactionsThrough": "2026-10-09"}})
+    _, lines = run(repo, FakeBroker())
+    assert "would submit" in "\n".join(lines)
+    assert "checked only through 2026-10-09." in "\n".join(lines)
 
 
 # ── counts and clock ─────────────────────────────────────────────────────────
