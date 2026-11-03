@@ -214,7 +214,7 @@ def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
     if not out:
         out.append("No proposals today.")
 
-    out += blocked_lines(rec.get("blocked") or [])
+    out += blocked_lines(rec.get("blocked") or [], decisions)
     none = [name for name, present in (("TRIM", trims), ("stop-loss",
             [d for d in exits if d["kind"] == "stop-loss"])) if not present]
     if none:
@@ -222,21 +222,35 @@ def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
     return out
 
 
-def blocked_lines(blocked: list[dict[str, Any]]) -> list[str]:
+def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]) -> list[str]:
     """One line per (rule, figure), naming every symbol it blocked and the number behind it.
 
     The figure is the record's value up to its first ';' — 'committed $200.00 of $200' —
     because what follows is the model restating the arithmetic, worded differently daily.
+
+    REDISTRIBUTE candidates are the exception: the review names their rule in free text
+    ('REDISTRIBUTE one direction per review', 'redistribute: one symbol, one direction;
+    committed-add cap'), a new wording most days. They share one line, each symbol
+    given the reason that applies to it: an exit proposed on it, or its own figure.
     """
+    selling = {d.get("symbol") for d in decisions if d.get("side") == "sell"}
     groups: dict[tuple[str, str], list[str]] = {}
+    no_recipient: list[str] = []
     for b in blocked:
         figure = str(b.get("value") or "n/a").split(";")[0].strip()
-        groups.setdefault((str(b.get("rule") or "blocked"), figure), []).append(b["symbol"])
+        rule = str(b.get("rule") or "blocked")
+        if "redistribute" in rule.lower():
+            why = "exit proposed" if b["symbol"] in selling else figure
+            no_recipient.append(f"**{b['symbol']}** ({why})")
+            continue
+        groups.setdefault((rule, figure), []).append(b["symbol"])
     out = []
     for (rule, figure), symbols in groups.items():
         names = ", ".join(f"**{s}**" for s in symbols)
         each = "each " if len(symbols) > 1 else ""
         out.append(f"Blocked ({rule}): {names} — {each}{figure}.")
+    if no_recipient:
+        out.append("No REDISTRIBUTE recipient: " + ", ".join(no_recipient) + ".")
     return out
 
 
@@ -254,14 +268,26 @@ def decision_section(rec: dict[str, Any]) -> list[str]:
 
 
 def departure_section(rec: dict[str, Any]) -> list[str]:
+    """One line per distinct reading, naming every symbol it was applied to.
+
+    The review writes one departure per symbol, and when it reads several symbols the
+    same way it repeats the same threshold, action and reason for each — on three
+    symbols that was most of a message, and pushed it past Discord's 2,000 characters.
+    """
     deps = rec.get("departures") or []
     if not deps:
         return []
-    out = ["Read past a threshold:"]
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for d in deps:
-        out.append(f"• **{d['symbol']}** — {d.get('threshold')}; observed "
-                   f"{sentence(d.get('observed'))} Did: {sentence(d.get('did'))} "
-                   f"Why: {sentence(d.get('why'))}")
+        key = tuple(sentence(d.get(k)).lower() for k in ("threshold", "did", "why"))
+        groups.setdefault(key, []).append(d)  # type: ignore[arg-type]
+    out = ["Read past a threshold:"]
+    for members in groups.values():
+        first = members[0]
+        names = ", ".join(f"**{d['symbol']}** ({str(d.get('observed') or 'n/a').rstrip('.')})"
+                          for d in members)
+        out.append(f"• {names} — {sentence(first.get('threshold'))} "
+                   f"Did: {sentence(first.get('did'))} Why: {sentence(first.get('why'))}")
     out.append("Not auto-eligible; Jack confirms either way.")
     return out
 
@@ -296,8 +322,8 @@ def reconcile_section(recon: dict[str, Any] | None, recon_md: bool) -> list[str]
         by_account.setdefault(a.get("account", "Unknown"), []).append(reconcile_entry(a))
     order = ACCOUNT_ORDER + sorted(k for k in by_account if k not in ACCOUNT_ORDER)
     out = ["Reconcile:",
-           "Outside Agentic. The sheet tab is regenerated from the Observatory's Robinhood "
-           "snapshot, so refresh the snapshot rather than editing rows; nothing to place."]
+           "Outside Agentic. The sheet follows the Observatory's Robinhood snapshot: "
+           "refresh it rather than edit rows."]
     out += [f"{acct}: " + "; ".join(by_account[acct]) + "." for acct in order if acct in by_account]
     return out
 

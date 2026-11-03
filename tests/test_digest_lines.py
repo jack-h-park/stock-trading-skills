@@ -185,7 +185,7 @@ def test_departures_and_decision_requests_have_one_shape():
                                  "readings": [{"side": "buy", "detail": "8.8% below high"},
                                               {"side": "exit", "detail": "+12% from cost"}]}]}
     assert dl.departure_section(rec)[1] == (
-        "• **META** — BUY >=5% below 20-day high; observed 10.44% below high. "
+        "• **META** (10.44% below high) — BUY >=5% below 20-day high. "
         "Did: Propose take-profit. Why: Realize the gain.")
     assert dl.decision_section(rec)[1] == (
         "• **NVDA** — Buy or exit? buy: 8.8% below high; exit: +12% from cost.")
@@ -211,3 +211,39 @@ def test_a_malformed_record_still_produces_a_message(tmp_path):
         sys.argv = argv
     text = (logs / "digest" / f"{DATE}.agentic.md").read_text()
     assert text.startswith("⚠️ The 2026-10-21 digest could not be assembled (KeyError)")
+
+
+def test_departures_read_the_same_way_share_one_line():
+    why = "The momentum drawdown favors reducing exposure rather than adding."
+    rec = {"departures": [
+        {"symbol": "META", "threshold": "BUY >=5% below 20-day high",
+         "observed": "19.6% below high", "did": "Choose 50% TRIM and omit BUY", "why": why},
+        {"symbol": "GOOGL", "threshold": "BUY >=5% below 20-day high",
+         "observed": "10.81% below high", "did": "Choose 50% TRIM and omit BUY.", "why": why},
+        {"symbol": "AAPL", "threshold": "TRIM >=10% below 20-day high", "observed": "10.2%",
+         "did": "Hold", "why": "Earnings tomorrow."},
+    ]}
+    assert dl.departure_section(rec)[1:3] == [
+        "• **META** (19.6% below high), **GOOGL** (10.81% below high) — BUY >=5% below 20-day "
+        f"high. Did: Choose 50% TRIM and omit BUY. Why: {why}",
+        "• **AAPL** (10.2%) — TRIM >=10% below 20-day high. Did: Hold. Why: Earnings tomorrow.",
+    ]
+
+
+def test_redistribute_blocks_share_one_line_whatever_the_rule_wording():
+    decisions = [{"side": "sell", "symbol": "MSFT", "kind": "take-profit"},
+                 {"side": "sell", "symbol": "META", "kind": "trim"}]
+    blocked = [
+        {"symbol": "NVDA", "rule": "committed-add cap", "value": "committed $200.00 of $200"},
+        {"symbol": "MSFT", "rule": "REDISTRIBUTE one direction per review",
+         "value": "take-profit sell 0.236215 shares"},
+        {"symbol": "AAPL", "rule": "redistribute: one symbol, one direction; committed-add cap",
+         "value": "committed $200.00 of $200; would make $253"},
+        {"symbol": "META", "rule": "REDISTRIBUTE one direction and committed-add cap",
+         "value": "Proposed sell on this symbol"},
+    ]
+    assert dl.blocked_lines(blocked, decisions) == [
+        "Blocked (committed-add cap): **NVDA** — committed $200.00 of $200.",
+        "No REDISTRIBUTE recipient: **MSFT** (exit proposed), "
+        "**AAPL** (committed $200.00 of $200), **META** (exit proposed).",
+    ]
