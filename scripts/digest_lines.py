@@ -195,20 +195,24 @@ def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
     trims = [d for d in decisions if d.get("kind") == "trim"]
     exits = [d for d in decisions if d.get("kind") in EXIT_KINDS]
 
+    def stood(d: dict[str, Any]) -> str:
+        # Every kind, not just exits: a trim re-sized to half the current position
+        # each day reads as fresh news unless the line says how long it has stood.
+        return standing_text((standing or {}).get(f"{d['symbol']}:{d['kind']}"))
+
     out: list[str] = []
     for d in buys:
         out.append(f"• BUY {dollars(d['notional'])} **{d['symbol']}** — "
-                   f"{drawdown(signals, d['symbol'])}")
+                   f"{drawdown(signals, d['symbol'])}; {stood(d)}")
     for d in trims:
         dest = ", ".join(f"**{r['symbol']}** {dollars(r['notional'])}" for r in redistribute)
         tail = f"REDISTRIBUTE → {dest}" if dest else "proceeds held as cash"
         out.append(f"• TRIM **{d['symbol']}** **{qty(d['shares'])}sh** (~{money(d['notional'])})"
-                   f" — {drawdown(signals, d['symbol'])}; {tail}")
+                   f" — {drawdown(signals, d['symbol'])}; {stood(d)}; {tail}")
     for d in exits:
         label = "Take-profit" if d["kind"] == "take-profit" else "Stop-loss"
-        key = f"{d['symbol']}:{d['kind']}"
         line = (f"• {label} **{d['symbol']}** **{qty(d['shares'])}sh** (~{money(d['notional'])})"
-                f" — {standing_text((standing or {}).get(key))}")
+                f" — {stood(d)}")
         term = term_text(lots.get(d["symbol"]))
         out.append(f"{line}; {term}" if term else line)
     if not out:

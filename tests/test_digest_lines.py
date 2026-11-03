@@ -46,7 +46,8 @@ DECISIONS = {
 }
 SIGNALS = {"symbols": {"QQQM": {"drawdownPct": 5.94}, "NVDA": {"drawdownPct": 11.05}}}
 STANDING = {"MSFT:take-profit": {"since": "2026-09-01", "sessions": 34, "atLeast": True},
-            "META:take-profit": {"since": "2026-09-09", "sessions": 29}}
+            "META:take-profit": {"since": "2026-09-09", "sessions": 29},
+            "NVDA:trim": {"since": "2026-10-22", "sessions": 8}}
 TAX = {
     "lots": {"MSFT": {"term": "short-term", "oldestLongTermFrom": "2027-06-24"},
              "META": {"term": "mixed", "turnsLongTermSoon": True, "daysToLongTerm": 12}},
@@ -97,8 +98,9 @@ def test_the_caps_match_the_guardrails():
 def test_proposals_render_in_a_fixed_order_with_standing_and_term():
     lines = dl.proposal_lines(DECISIONS, SIGNALS, STANDING, TAX)
     assert lines[:4] == [
-        "• BUY $100 **QQQM** — 5.94% below 20d high",
-        "• TRIM **NVDA** **0.495877sh** (~$107.65) — 11.05% below 20d high; proceeds held as cash",
+        "• BUY $100 **QQQM** — 5.94% below 20d high; new",
+        "• TRIM **NVDA** **0.495877sh** (~$107.65) — 11.05% below 20d high; "
+        "standing since Oct 22, 8 sessions; proceeds held as cash",
         "• Take-profit **MSFT** **0.236215sh** (~$125.86) — standing since at least Sep 1, "
         "34+ sessions; short-term until Jun 24, 2027",
         "• Take-profit **META** **0.174662sh** (~$121.99) — standing since Sep 9, 29 sessions; "
@@ -117,7 +119,7 @@ def test_a_trim_names_its_redistribute_recipients():
         {"symbol": "AMZN", "kind": "redistribute", "notional": 55},
     ]}
     assert dl.proposal_lines(rec, None, None, None)[0] == (
-        "• TRIM **NVDA** **0.5sh** (~$110.00) — drawdown n/a; "
+        "• TRIM **NVDA** **0.5sh** (~$110.00) — drawdown n/a; new; "
         "REDISTRIBUTE → **AAPL** $55, **AMZN** $55")
 
 
