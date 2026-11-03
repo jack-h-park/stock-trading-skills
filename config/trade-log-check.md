@@ -18,7 +18,7 @@ only place it can be made unskippable is after the fact.
 | Parameter | Value |
 |---|---|
 | Account | Robinhood Agentic `<AGENTIC_ACCOUNT>` **only** |
-| Order filter | `state=filled`, `placed_agent=agentic` |
+| Order filter | `state=filled`, `agent_initiated=true` |
 | Lookback | 30 calendar days from the run date |
 | Floor date | **2026-08-24** — fills before this are never alerted on |
 | Log location | `logs/trades/YYYY-MM-DD.md`, matched on the order's fill date |
@@ -26,6 +26,14 @@ only place it can be made unskippable is after the fact.
 Only the Agentic account is in scope, because it is the only account this repo
 trades (`docs/decisions.md#3`). The other Robinhood accounts are Jack's own
 manual activity and have no log contract to violate.
+
+Filter on `agent_initiated`, not `placed_agent`. `placed_agent` names whoever
+finally submitted the order, and an order the agent submits for approval is
+finally submitted by Jack approving it in the app, so it reads `user`. Every
+`scripts/scheduled_orders.py` buy goes through approval: under the old
+`placed_agent=agentic` filter the 2026-10-30 and 2026-11-03 QQQM buys both filled
+and the check reported `0 in window`. `agent_initiated=true` returns direct agent
+orders and approved ones alike.
 
 ## The floor date
 
@@ -39,7 +47,9 @@ correct fix for a new miss is to write the entry.
 ## Matching rule
 
 A fill is **covered** when `logs/trades/<fill-date>.md` exists and names the
-order id **in full**, or names the same symbol and side on that date. Prefer the
+order id **in full** — or the order's `ref_id`, which is the id an approval
+submission returns and the one `scripts/scheduled_orders.py` journals — or
+names the same symbol and side on that date. Prefer the
 order id — symbol+side is the fallback for an entry written before the id was
 known, and it is genuinely weaker: four of the eleven orders in
 the backlog note kept with the logs (`logs/trades/README.md`, untracked) were placed in one session, two of them sharing the id

@@ -55,10 +55,11 @@ the other, and the Agentic account is exactly that case.
 
 1. Read `config/trade-log-check.md` for the scope, lookback, floor date and matching rule.
 2. Call `get_equity_orders` for account `<AGENTIC_ACCOUNT>` with `state=filled` and
-   `placed_agent=agentic`. Keep fills inside the lookback window and on or after the floor
+   `agent_initiated=true` (not `placed_agent=agentic`, which misses every order Jack
+   approved in the app). Keep fills inside the lookback window and on or after the floor
    date; discard everything before the floor without comment.
 3. For each remaining fill, look for `logs/trades/<fill-date>.md` and check whether it names
-   that order id — or, failing an id, the same symbol and side on that date.
+   that order id or its `ref_id` — or, failing an id, the same symbol and side on that date.
 4. A fill with no matching entry is a **finding**. If you cannot tell, report it: the config
    fixes the tie-break toward reporting.
 
