@@ -160,6 +160,19 @@ that; the $200 committed-add cap happened to block the buy. With the cap empty t
 review would have proposed buying $100 of GOOGL and selling $101.85 of it on the
 same morning.
 
+**A TRIM reading counts even when no TRIM order is made.** The $150 minimum
+position value and the 3-day suspension in `config/trim-policy.md` decide whether a
+trim is worth placing; they do not change what the drawdown says. On 2026-11-02
+QQQM sat 10.70% below its 20-day high, its trim was skipped because the position
+was worth $97, the record therefore carried no exit, and a $100 buy was marked
+auto-eligible and submitted. That buy lifted the position past the floor, and the
+trim came due four sessions later: bought on a reading that said cut, then cut.
+So a buy on a symbol at or past the TRIM threshold is a buy-vs-exit overlap like
+any other, whether or not the trim itself was placed: the review records it as a
+departure and the buy is not auto-eligible. Jack can still take it.
+`scripts/scheduled_orders.py` re-checks the same threshold from the review's
+signals before submitting anything.
+
 **Why a ruling rather than a default.** Picking one — say, the exit, because it
 reduces exposure — reads as principled and would have settled this in a line. But
 it is a trading decision dressed as a tie-break, and the rules genuinely do not

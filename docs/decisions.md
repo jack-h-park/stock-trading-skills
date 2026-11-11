@@ -531,3 +531,26 @@ app is the check for the days the summary cannot see yet, and they are also the
 person who would have made such a sale. Level 2 has no such person, so before
 approvals can go away it must either block on staleness or have the Observatory
 filed promptly.
+
+## 23. A buy in the TRIM zone is not auto-eligible, even when the trim was skipped (2026-11-10)
+
+**Decision.** A drawdown at or past the TRIM threshold is an exit reading for the
+one-symbol-one-direction rule whether or not a TRIM order was made. A buy on that symbol
+is recorded as a departure and is not auto-eligible. `scripts/scheduled_orders.py`
+re-checks the threshold, read from `config/trim-policy.md`, against the review's
+`signals.json` (and against the live quote when the close is over 24h old) and refuses to
+submit at or past it. A missing signals file or an unreadable threshold blocks every buy.
+
+**Why.** On 2026-11-02 QQQM was 10.70% below its 20-day high. Its trim was skipped by
+the $150 minimum position value, so the record carried no exit, and a $100 buy was
+marked auto-eligible and submitted on 11-03. The buy lifted the position past the
+floor, and once the 3-day suspension ran out the trim was proposed on 11-06. The floor
+and the suspension decide whether a trim is worth placing; they say nothing about what
+the drawdown reads.
+
+**Chosen against.** Forbidding buys at or past the TRIM threshold: it settles a
+trading question by default, which the one-direction rule exists to avoid, and it
+would remove the option of adding to an ETF (which has no stop) in a deep drawdown.
+Keeping the buy auto-eligible: it lets the system buy on a reading that says cut,
+with no one looking. Across every decision record to date this would have changed one
+order, so the cost in confirmations is small.

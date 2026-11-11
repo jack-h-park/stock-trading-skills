@@ -20,7 +20,9 @@ Hard limits and confirmation policy. The `trade` skill must enforce every line h
   - **no unresolved buy-vs-exit conflict on the symbol.** When both fire, neither
     side is auto-eligible until Jack has ruled, and the ruling is stored in
     `config/rulings.json` so it is asked once rather than every session —
-    see "One symbol, one direction per review" in `strategy/policy.md`
+    see "One symbol, one direction per review" in `strategy/policy.md`. A drawdown
+    at or past the TRIM threshold is an exit reading for this purpose even when the
+    trim was skipped by the minimum position value or the 3-day suspension
   - **the price the decision used is a settled close under 24h old, or a live quote.**
     Prices are read from a table that is written by a scheduled refresh and re-checked
     by nothing. On 2026-08-28 it held an intraday quote labelled as that day's close
