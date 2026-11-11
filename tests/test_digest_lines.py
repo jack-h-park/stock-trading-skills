@@ -128,6 +128,30 @@ def test_a_new_proposal_says_new():
     assert dl.standing_text(None) == "new"
 
 
+def test_a_null_average_renders_as_na_instead_of_raising():
+    # 2026-11-05: Robinhood omitted TSLA's and QLD's average cost; the record said null.
+    tsla = {"account": "Long-term", "symbol": "TSLA", "kind": "drift", "sheetQty": "104",
+            "sheetAvg": 352.99, "liveQty": "107.000000", "liveAvg": None, "gapUsd": 1030.53}
+    assert dl.reconcile_entry(tsla) == "TSLA → 107 @ avg n/a (+3 sh)"
+    qld = {"account": "Long-term", "symbol": "QLD", "kind": "add", "sheetQty": None,
+           "sheetAvg": None, "liveQty": "34.200661", "liveAvg": None, "gapUsd": 2475.44}
+    assert dl.reconcile_entry(qld) == "add QLD 34.200661 @ avg n/a"
+
+
+def test_one_broken_section_does_not_cost_the_whole_message(tmp_path):
+    logs = tmp_path / "logs"
+    (logs / "reviews").mkdir(parents=True)
+    (logs / "reconcile").mkdir()
+    (logs / "reviews" / f"{DATE}.decisions.json").write_text(json.dumps(DECISIONS))
+    # A drift alert missing the field the renderer needs.
+    (logs / "reconcile" / f"{DATE}.json").write_text(json.dumps(
+        {"alerts": [{"account": "Mid-term", "symbol": "XYZ", "kind": "drift"}],
+         "tradeLog": {"filledInWindow": 0, "findings": []}}))
+    text = dl.agentic_message(logs, DATE)
+    assert "• BUY $100 **QQQM**" in text
+    assert "Reconcile: could not be rendered today (KeyError)" in text
+
+
 def test_reconcile_entries_take_the_copyable_form():
     drift = {"symbol": "SSO", "kind": "drift", "sheetQty": "4.261975", "sheetAvg": 48.87,
              "liveQty": "34.261975", "liveAvg": 67.90}
@@ -212,7 +236,9 @@ def test_a_malformed_record_still_produces_a_message(tmp_path):
     finally:
         sys.argv = argv
     text = (logs / "digest" / f"{DATE}.agentic.md").read_text()
-    assert text.startswith("⚠️ The 2026-10-21 digest could not be assembled (KeyError)")
+    # The broken section says so in place; the rest of the message still goes out.
+    assert text.startswith("**Hermes Trader — Agentic**")
+    assert "Proposals: could not be rendered today (KeyError)" in text
 
 
 def test_departures_read_the_same_way_share_one_line():

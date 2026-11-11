@@ -296,20 +296,27 @@ def departure_section(rec: dict[str, Any]) -> list[str]:
     return out
 
 
+def avg_text(value: Any) -> str:
+    # Robinhood omits the average cost on some positions (transferred-in lots,
+    # long-held ones); the record carries null, and 'n/a' is the honest rendering.
+    return "avg n/a" if value is None else money(value)
+
+
 def reconcile_entry(a: dict[str, Any]) -> str:
     sym, kind = a["symbol"], a.get("kind", "drift")
     if kind == "add":
-        return f"add {sym} {qty(a['liveQty'])} @ {money(a['liveAvg'])}"
+        return f"add {sym} {qty(a['liveQty'])} @ {avg_text(a.get('liveAvg'))}"
     if kind == "remove":
         return f"remove {sym} (−{qty(a['sheetQty'])} sh)"
     delta = Decimal(str(a["liveQty"])) - Decimal(str(a["sheetQty"]))
     shares = signed(Decimal(qty(abs(delta))) * (1 if delta >= 0 else -1)) + " sh"
     if kind == "verify":
         return f"verify {sym} {qty(a['liveQty'])} ({shares})"
-    text = f"{sym} → {qty(a['liveQty'])} @ {money(a['liveAvg'])} ({shares}"
-    avg = (Decimal(str(a["liveAvg"])) - Decimal(str(a["sheetAvg"]))).quantize(Decimal("0.01"))
-    if avg != 0:
-        text += f", avg {signed(avg, '$')}"
+    text = f"{sym} → {qty(a['liveQty'])} @ {avg_text(a.get('liveAvg'))} ({shares}"
+    if a.get("liveAvg") is not None and a.get("sheetAvg") is not None:
+        avg = (Decimal(str(a["liveAvg"])) - Decimal(str(a["sheetAvg"]))).quantize(Decimal("0.01"))
+        if avg != 0:
+            text += f", avg {signed(avg, '$')}"
     return text + ")"
 
 
@@ -345,6 +352,28 @@ def unlogged_section(recon: dict[str, Any] | None) -> list[str]:
     return out
 
 
+RENDER_ERRORS = (KeyError, TypeError, AttributeError, InvalidOperation, ValueError)
+# Sections that fell back to a note in this run; main() exits 1 when any did, so the
+# run log still records a failure even though a message went out.
+failed_sections: list[str] = []
+
+
+def guarded(title: str, build: Any, *args: Any) -> list[str]:
+    """One section, or a one-line note in its place when its record has an unexpected shape.
+
+    On 2026-11-05 one reconcile alert with a null average cost raised in the reconcile
+    section, and the whole Agentic message was replaced by a one-line failure notice:
+    the proposals, which were fine, never reached Discord. A section now fails alone.
+    """
+    try:
+        return build(*args)
+    except RENDER_ERRORS as exc:
+        print(f"digest_lines: {title} section: {exc!r}", file=sys.stderr)
+        failed_sections.append(title)
+        return [f"{title}: could not be rendered today ({type(exc).__name__}); "
+                f"see the full review in logs/."]
+
+
 def agentic_message(logs: Path, date: str) -> str:
     reviews = logs / "reviews"
     rec = _load(reviews / f"{date}.decisions.json")
@@ -363,10 +392,12 @@ def agentic_message(logs: Path, date: str) -> str:
         blocks.append(["No decision record today, so no proposals can be listed; "
                        "read logs/reviews/ directly."])
     else:
-        blocks += [b for b in (decision_section(rec), departure_section(rec)) if b]
-        blocks.append(proposal_lines(rec, signals, standing, tax))
-    for section in (unlogged_section(recon),
-                    reconcile_section(recon, (logs / "reconcile" / f"{date}.md").exists())):
+        blocks += [b for b in (guarded("Decisions", decision_section, rec),
+                               guarded("Read past a threshold", departure_section, rec)) if b]
+        blocks.append(guarded("Proposals", proposal_lines, rec, signals, standing, tax))
+    for section in (guarded("Trade log", unlogged_section, recon),
+                    guarded("Reconcile", reconcile_section, recon,
+                            (logs / "reconcile" / f"{date}.md").exists())):
         if section:
             blocks.append(section)
     shadow = _text(logs / "shadow" / "latest.txt")
@@ -407,11 +438,12 @@ def main() -> int:
     digest = logs / "digest"
     digest.mkdir(parents=True, exist_ok=True)
     rc = 0
+    failed_sections.clear()
     for name, build in ((f"{args.date}.agentic.md", agentic_message),
                         (f"{args.date}.md", reference_message)):
         try:
             text = build(logs, args.date)
-        except (KeyError, TypeError, AttributeError, InvalidOperation, ValueError) as exc:
+        except RENDER_ERRORS as exc:
             # A record with a shape this script did not expect must not cost the day's
             # message: say what happened and where the full review is.
             print(f"digest_lines: {name}: {exc!r}", file=sys.stderr)
@@ -419,7 +451,7 @@ def main() -> int:
                     f"the full review is in logs/reviews/{args.date}.md.\n")
             rc = 1
         (digest / name).write_text(text)
-    return rc
+    return 1 if failed_sections else rc
 
 
 if __name__ == "__main__":
