@@ -273,5 +273,78 @@ def test_redistribute_blocks_share_one_line_whatever_the_rule_wording():
     assert dl.blocked_lines(blocked, decisions) == [
         "Blocked (committed-add cap): **NVDA** — committed $200.00 of $200.",
         "No REDISTRIBUTE recipient: **MSFT** (exit proposed), "
-        "**AAPL** (committed $200.00 of $200), **META** (exit proposed).",
+        "**AAPL** (committed $200.00 of $200), **META** (trim proposed).",
     ]
+
+
+def test_a_wash_sale_window_a_stop_loss_would_open_reads_as_one_line():
+    # 2026-11-10's two records, worded as a sentence the generic form garbled.
+    value = "If sold 2026-11-11 at a loss, buy block through 2026-12-11; clears 2026-12-12"
+    blocked = [{"symbol": s, "rule": "wash-sale window from proposed stop-loss", "value": value}
+               for s in ("GOOGL", "NVDA")]
+    assert dl.blocked_lines(blocked, []) == [
+        "Wash-sale hold if the stop-loss sells at a loss: **GOOGL**, **NVDA** — "
+        "no buys until Dec 12, 2026."]
+    # 11-06's wording, with only a 'through' date: buys resume the day after.
+    other = [{"symbol": "GOOGL", "rule": "proposed stop-loss wash-sale block",
+              "value": "Loss sale on 2026-11-09 starts a block through 2026-12-10"}]
+    assert dl.blocked_lines(other, [])[0].endswith("no buys until Dec 11, 2026.")
+    # A window an actual past sale opened keeps the generic line.
+    past = [{"symbol": "AAPL", "rule": "wash-sale buy block", "value": "loss sale 2026-11-02"}]
+    assert dl.blocked_lines(past, []) == [
+        "Blocked (wash-sale buy block): **AAPL** — loss sale 2026-11-02."]
+
+
+def test_a_position_moved_between_accounts_is_one_entry():
+    # 2026-11-05: QLD left Mid-term and arrived whole in Long-term.
+    recon = {"alerts": [
+        {"account": "Long-term", "symbol": "QLD", "kind": "add", "liveQty": "34.200661",
+         "liveAvg": None},
+        {"account": "Mid-term", "symbol": "QLD", "kind": "remove", "sheetQty": "34.200661"},
+        {"account": "Mid-term", "symbol": "SPY", "kind": "remove", "sheetQty": "0.026142"},
+        {"account": "Long-term", "symbol": "TSLA", "kind": "add", "liveQty": "3",
+         "liveAvg": None},
+        {"account": "Mid-term", "symbol": "TSLA", "kind": "remove", "sheetQty": "2"},
+    ]}
+    lines = dl.reconcile_section(recon, True)
+    assert "Moved between accounts: QLD 34.200661 sh Mid-term → Long-term." in lines
+    # Different share counts are not a move; each stays in its own account.
+    assert "Long-term: add TSLA 3 @ avg n/a." in lines
+    assert "Mid-term: remove SPY (−0.026142 sh); remove TSLA (−2 sh)." in lines
+
+
+OVERVIEW = {"date": "2026-11-10", "accounts": [
+    {"name": "Agentic", "equitiesUsd": 1456.37, "cashUsd": 614.87, "cryptoUsd": None,
+     "totalUsd": 2071.24},
+    {"name": "Long-term", "equitiesUsd": 150000.00, "cashUsd": 4032.28, "cryptoUsd": None,
+     "totalUsd": 154032.28},
+    {"name": "Mid-term", "equitiesUsd": 90000.00, "cashUsd": 1888.86, "cryptoUsd": 26085.29,
+     "totalUsd": 117974.15},
+    {"name": "Chase", "equitiesUsd": 80000.00, "cashUsd": None, "cryptoUsd": None,
+     "totalUsd": 80000.00},
+    {"name": "Merrill", "equitiesUsd": 38000.00, "cashUsd": None, "cryptoUsd": None,
+     "totalUsd": 38000.00}],
+    "grandTotalUsd": 392077.67, "flagged": {"count": 23, "agentic": 1}}
+
+
+def test_the_reference_head_is_rendered_from_the_overview_record():
+    assert dl.overview_head(OVERVIEW) == (
+        "US accounts: $392,077.67 across 5 accounts — $359,456.37 equities + $6,536.01 cash "
+        "(Agentic $614.87, Long-term $4,032.28, Mid-term $1,888.86) + $26,085.29 crypto in "
+        "Mid-term.\n"
+        "Read-only context; Korean holdings are excluded.\n"
+        "⚠️ 23 positions flagged across all accounts — see full review; 1 in Agentic.")
+
+
+def test_an_overview_that_does_not_add_up_falls_back_to_the_model_head(tmp_path):
+    bad = json.loads(json.dumps(OVERVIEW))
+    bad["grandTotalUsd"] = 400000.00
+    assert dl.overview_head(bad) is None
+    logs = tmp_path / "logs"
+    (logs / "reviews").mkdir(parents=True)
+    (logs / "digest").mkdir()
+    (logs / "reviews" / f"{DATE}.overview.json").write_text(json.dumps(bad))
+    (logs / "digest" / f"{DATE}.reference-head.md").write_text("US accounts: from the model.")
+    assert dl.reference_message(logs, DATE).startswith("US accounts: from the model.")
+    (logs / "reviews" / f"{DATE}.overview.json").write_text(json.dumps(OVERVIEW))
+    assert dl.reference_message(logs, DATE).startswith("US accounts: $392,077.67")

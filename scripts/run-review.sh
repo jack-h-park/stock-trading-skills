@@ -336,6 +336,8 @@ Steps:
       - Top 5 positions by current value across all accounts.
 3. Write a SELF-CONTAINED markdown section to logs/reviews/${TODAY}.overview.md (overwrite if it exists) titled with a '## Full Portfolio Overview' heading, containing: (1) account-by-account summary table (account | # positions | total value), (2) a clearly labelled cross-account grand total line, (3) highlights table.
 3a. THE GRAND TOTAL ALWAYS MEANS THE SAME THING: every asset every account holds — equities, cash AND crypto — with nothing excluded. State the composition on the total line, naming each non-equity component and its amount (e.g. 'includes \$1,982.97 cash and \$19,908.20 crypto in Mid-term'). This is a day-over-day figure Jack tracks, so a total whose definition moves is worse than one that is merely large: on 2026-07-30 crypto was excluded and said so, on 07-31 it was silently included, and the number jumped \$22,642 on a day the US market rose about 1%. If a component cannot be priced, still list it and say so rather than dropping it from the sum. This section is informational only — all proposals and execution remain scoped to the Agentic account. Do not write to logs/reviews/${TODAY}.md. Do not commit.
+3b. OVERVIEW RECORD — also write logs/reviews/${TODAY}.overview.json with the same figures as machine-readable JSON. The opening of Jack's read-only message is rendered from this file in code. Copy the numbers from the section you just wrote; never recompute them. One entry per account in the summary table, in the same order, using these names for the Robinhood accounts: Agentic, Long-term, Mid-term; external accounts by brokerage name (Chase, Merrill, Fidelity). Use null for a component the account does not have or that could not be priced, never 0. 'flagged' counts the positions in the highlights table under the drawdown and gain rules (not the top-5 rows), and 'agentic' how many of those are in the Agentic account. Exact shape, no extra keys:
+{\"date\": \"${TODAY}\", \"accounts\": [{\"name\": \"Agentic\", \"equitiesUsd\": <number>, \"cashUsd\": <number or null>, \"cryptoUsd\": <number or null>, \"totalUsd\": <number>}], \"grandTotalUsd\": <number>, \"flagged\": {\"count\": <number>, \"agentic\": <number>}}
 
 ${PRICE_BASIS}
 ${CRITICAL_RO}"
@@ -428,7 +430,7 @@ mkdir -p "$REPO/logs/reviews"
 [ -s "$REPO/$SIGNALS_FILE" ] || echo "signal_windows: no file — job A computes the 20-day high itself" >> "$RUNLOG"
 # The digest reads this record, so one left by an earlier run today must not stand
 # in for a reconcile that failed this time.
-rm -f "$REPO/logs/reconcile/${TODAY}.json"
+rm -f "$REPO/logs/reconcile/${TODAY}.json" "$REPO/logs/reviews/${TODAY}.overview.json"
 run_job "$PROMPT_A" "$TMP_A_EVENTS" "$TMP_A_ERR" A & PID_A=$!
 run_job "$PROMPT_B" "$TMP_B_EVENTS" "$TMP_B_ERR" B & PID_B=$!
 run_job "$PROMPT_C" "$TMP_C_EVENTS" "$TMP_C_ERR" C & PID_C=$!
@@ -483,6 +485,7 @@ Steps:
    - If the overview flagged any position (notable drawdown ≤ −15% or gain ≥ +50%), one line: '⚠️ N positions flagged across all accounts — see full review', and say that the flagged holdings are outside Agentic when they are.
    - NO briefing note. The morning briefing already sent Jack its own items on this same channel, hours earlier; repeating them here makes the afternoon message look like news when it is a ledger.
    - If the overview section is missing, write one line saying the cross-account overview did not run today.
+   - This head is the fallback: when logs/reviews/${TODAY}.overview.json is present and adds up, the opening is rendered from it in code and this file is not used.
 4. Do NOT commit or push anything. logs/ is gitignored: this repo is public, and the journal names positions and balances. The reports stay on this machine and reach Jack through the digest below; the archive under $STOCK_DATA_DIR/trading-logs/ is where history is kept.
 
 CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. Write only the two fragments under logs/digest."
