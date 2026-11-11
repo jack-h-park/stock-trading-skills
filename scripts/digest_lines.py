@@ -47,9 +47,12 @@ from typing import Any
 DAILY_ORDER_CAP = 5
 WEEKLY_ORDER_CAP = 6
 
+# The '$' on the day change is optional. On 2026-11-11 the model wrote "day +4.03"
+# for "day +$4.03", and the strict form turned a correct sleeve line into "Sleeve
+# unavailable". The figures are what the digest copies; the currency sign is not.
 SLEEVE = re.compile(
     r"Sleeve: \$(?P<value>[\d,]+(?:\.\d+)?); prior close \$[\d,]+(?:\.\d+)?; "
-    r"day (?P<dsign>[+\-−]?)\$(?P<change>[\d,]+(?:\.\d+)?) \((?P<psign>[+\-−]?)(?P<pct>[\d.]+)%\)"
+    r"day (?P<dsign>[+\-−]?)\$?(?P<change>[\d,]+(?:\.\d+)?) \((?P<psign>[+\-−]?)(?P<pct>[\d.]+)%\)"
 )
 
 ACCOUNT_ORDER = ["Long-term", "Mid-term"]

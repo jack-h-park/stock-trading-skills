@@ -58,7 +58,7 @@ export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 # (an MSFT take-profit and an AAPL trim) to logs/reviews/, and none of it ever
 # reached Jack, because the step that formats and delivers it never started. The
 # run log ends mid-file with no error, since the abort also killed the logging.
-: "${STOCK_DATA_DIR:=$HOME/workspace/data/stock-management}"
+: "${STOCK_DATA_DIR:=$HOME/workspace/data/financial-records}"
 
 # A capacity answer (429, 5xx, "overloaded") has done no work — it is not a
 # verdict on the request. One such answer used to end the phase for the day, so
@@ -97,7 +97,7 @@ TODAY="$(date +%Y-%m-%d)"
 # on 2026-08-18 that cost two denied Bash calls and the observatory context was silently
 # skipped. codex reads through its sandboxed shell and could expand them, but a resolved
 # path still pins which file the prompt means, so the rule stays.
-OBSERVATORY_SUMMARY="${STOCK_BRIEFING_SUMMARY_PATH:-$HOME/workspace/data/stock-management/outputs/stock-portfolio-observatory/briefing-summary.json}"
+OBSERVATORY_SUMMARY="${STOCK_BRIEFING_SUMMARY_PATH:-$HOME/workspace/data/financial-records/outputs/stock-portfolio-observatory/briefing-summary.json}"
 BRIEFING_JSON="$HOME/workspace/briefing/stock-portfolio-briefing/content/briefing-${TODAY}.json"
 NOW="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 RUNLOG="$REPO/logs/cron/${TODAY}.run.log"

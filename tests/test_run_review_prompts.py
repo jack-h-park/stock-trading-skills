@@ -30,7 +30,7 @@ EXPANDED = {
     "TAX_FILE": "logs/reviews/2026-10-07.tax.json",
     "OBSERVATORY_SUMMARY": "/tmp/briefing-summary.json",
     "BRIEFING_JSON": "/tmp/briefing.json",
-    "STOCK_DATA_DIR": "/tmp/stock-management",
+    "STOCK_DATA_DIR": "/tmp/financial-records",
 }
 
 START = re.compile(r"^(PRICE_BASIS|CRITICAL_RO|PROMPT_[A-Z])=\"")
