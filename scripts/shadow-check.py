@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_DB = Path.home() / (
-    "workspace/data/stock-management/outputs/stock-portfolio-observatory"
+    "workspace/data/financial-records/outputs/stock-portfolio-observatory"
     "/stock-portfolio-observatory.db"
 )
 # What counts as the same price.

@@ -66,6 +66,12 @@ def test_the_sleeve_line_is_formatted_in_code_from_the_last_section():
     assert dl.sleeve_line("no sleeve here") is None
 
 
+def test_the_sleeve_line_survives_a_day_change_without_its_dollar_sign():
+    # 2026-11-11: "day +4.03" instead of "day +$4.03" read as no sleeve line at all.
+    line = "Sleeve: $2,075.06; prior close $2,071.03; day +4.03 (+0.19%)"
+    assert dl.sleeve_line(line) == "Sleeve **$2,075.06**, day +$4.03 (+0.19%)"
+
+
 def test_slots_count_agentic_buys_in_the_target_week():
     buys = {"recentBuys": {
         "QQQM": [{"account": "Agentic", "date": "2026-10-20"}],

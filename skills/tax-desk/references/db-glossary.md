@@ -4,7 +4,7 @@ For the questions no CLI answers. Prefer a CLI whenever one exists.
 
 ## Opening it
 
-- Path: `$HOME/workspace/data/stock-management/outputs/stock-portfolio-observatory/stock-portfolio-observatory.db`
+- Path: `$HOME/workspace/data/financial-records/outputs/stock-portfolio-observatory/stock-portfolio-observatory.db`
   (the `dbPath` in any CLI's provenance is authoritative).
 - **Read-only, always:** `sqlite3 -readonly "$DB"`, or in Python
   `sqlite3.connect(f"file:{db}?mode=ro", uri=True)`.

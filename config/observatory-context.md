@@ -16,7 +16,7 @@ any ranked list. See "How to use it" below — that boundary is the whole point 
 ## Source
 
 - Path: `$STOCK_BRIEFING_SUMMARY_PATH`, default
-  `~/workspace/data/stock-management/outputs/stock-portfolio-observatory/briefing-summary.json`
+  `~/workspace/data/financial-records/outputs/stock-portfolio-observatory/briefing-summary.json`
 - **Those two forms are for a human reading this file.** `run-review.sh` resolves the path in
   the shell and hands the prompt a literal absolute one. Under `claude -p` that was forced —
   the job had `Read` but not `Bash`, so a `$VAR` or leading `~` could not be opened at all.
