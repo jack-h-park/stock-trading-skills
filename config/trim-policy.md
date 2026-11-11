@@ -77,3 +77,7 @@ Do not compute or propose any TRIM signal if:
 - Kill switch is active (portfolio down > 5% intraday)
 - The position was added within the last **3 calendar days** (avoid whipsawing a fresh entry)
 - The symbol already has a stop-loss or take-profit proposal in the same review (use the stronger signal)
+
+A suspended or floor-skipped TRIM is still a TRIM reading: a buy on that symbol is a
+buy-vs-exit overlap and is not auto-eligible ("One symbol, one direction per review"
+in `strategy/policy.md`).

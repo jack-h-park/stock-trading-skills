@@ -110,6 +110,7 @@ def repo(tmp_path: Path) -> Path:
     shutil.copy(REPO / "strategy" / "policy.md", tmp_path / "strategy" / "policy.md")
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "accounts.local.md").write_text(ACCOUNTS_MD)
+    shutil.copy(REPO / "config" / "trim-policy.md", tmp_path / "config" / "trim-policy.md")
     (tmp_path / "logs" / "reviews").mkdir(parents=True)
     make_db(tmp_path / "obs.db", SETTLED)
     return tmp_path
@@ -132,6 +133,12 @@ def write_record(repo: Path, decisions: list[dict[str, Any]], date: str = YESTER
            "decisions": decisions, "blocked": [], "departures": [], "decisionRequests": []}
     doc.update(extra)
     (repo / "logs" / "reviews" / f"{date}.decisions.json").write_text(json.dumps(doc))
+    # Every universe symbol in the entry band and short of the TRIM zone, unless a test
+    # writes its own signals.
+    (repo / "logs" / "reviews" / f"{date}.signals.json").write_text(json.dumps(
+        {"symbols": {s: {"high": 540.0, "price": 500.0, "drawdownPct": 7.41}
+                     for s in ("AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "VOO",
+                               "QQQM")}}))
     if tax is not None:
         (repo / "logs" / "reviews" / f"{date}.tax.json").write_text(json.dumps(tax))
 
@@ -615,9 +622,11 @@ FRIDAY = "2026-10-16"
 def friday_record(repo: Path, high: float | None = 540.0) -> None:
     make_db(repo / "obs.db", SETTLED, date=FRIDAY)
     write_record(repo, [buy("VOO")], date=FRIDAY, target="2026-10-19")
+    voo: dict[str, Any] = {"price": 500.0, "drawdownPct": 7.41}
     if high is not None:
-        (repo / "logs" / "reviews" / f"{FRIDAY}.signals.json").write_text(json.dumps(
-            {"symbols": {"VOO": {"high": high, "price": 500.0, "drawdownPct": 7.41}}}))
+        voo["high"] = high
+    (repo / "logs" / "reviews" / f"{FRIDAY}.signals.json").write_text(json.dumps(
+        {"symbols": {"VOO": voo}}))
 
 
 def quoted(price: float | None) -> dict[str, Any]:
@@ -669,3 +678,62 @@ def test_the_entry_threshold_is_policy_entry_rule():
     text = (REPO / "strategy" / "policy.md").read_text()
     m = re.search(r"\*\*≥ (\d+)% below its trailing 20-day high\*\*", text)
     assert m and float(m.group(1)) == so.ENTRY_DRAWDOWN_PCT
+
+
+# ── a buy at or past the TRIM threshold waits for confirmation ───────────────
+
+def signals(repo: Path, **drawdowns: float) -> None:
+    (repo / "logs" / "reviews" / f"{YESTERDAY}.signals.json").write_text(json.dumps(
+        {"symbols": {s: {"high": 314.115, "price": 280.51, "drawdownPct": dd}
+                     for s, dd in drawdowns.items()}}))
+
+
+def test_the_2026_11_02_qqqm_buy_is_not_auto_submitted(repo):
+    # 10.70% below the high; its TRIM was skipped by the $150 floor, so the record
+    # carried no exit, and the buy went out on its own.
+    go_live(repo)
+    write_record(repo, [buy("QQQM")])
+    signals(repo, QQQM=10.70)
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert broker.placed() == []
+    assert ("skipped QQQM: 10.70% below the 20-day high is past the 10% TRIM threshold"
+            in "\n".join(lines))
+
+
+def test_a_buy_just_short_of_the_trim_threshold_still_goes(repo):
+    go_live(repo)
+    write_record(repo, [buy("QQQM")])
+    signals(repo, QQQM=9.99)
+    broker = FakeBroker()
+    run(repo, broker)
+    assert broker.placed() == ["QQQM"]
+
+
+def test_no_signals_or_no_threshold_blocks_every_buy(repo):
+    go_live(repo)
+    write_record(repo, [buy("VOO")])
+    (repo / "logs" / "reviews" / f"{YESTERDAY}.signals.json").unlink()
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert broker.placed() == [] and "no signals file" in "\n".join(lines)
+
+    write_record(repo, [buy("VOO")])
+    (repo / "config" / "trim-policy.md").write_text("no table here")
+    broker = FakeBroker()
+    _, lines = run(repo, broker)
+    assert broker.placed() == [] and "TRIM threshold" in "\n".join(lines)
+
+
+def test_monday_skips_when_the_live_quote_has_reached_the_trim_zone(repo):
+    go_live(repo)
+    friday_record(repo)
+    broker = FakeBroker(review=quoted(480.0))  # 11.11% below 540
+    _, lines = run(repo, broker, now=MONDAY)
+    assert broker.placed() == []
+    assert "past the 10% TRIM threshold" in "\n".join(lines)
+
+
+def test_the_threshold_is_read_from_the_trim_policy_table():
+    text = (REPO / "config" / "trim-policy.md").read_text()
+    assert so.trim_threshold(text) == 10.0

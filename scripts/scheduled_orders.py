@@ -30,6 +30,12 @@ named in the report):
   * the symbol is in the universe parsed from strategy/policy.md
   * the symbol carries no departure, no decision request and no sell decision
     in the same record (one symbol, one direction)
+  * the review's drawdown for the symbol is under the TRIM threshold in
+    config/trim-policy.md. At or past it the momentum reading says cut, even when
+    the trim itself was skipped by the $150 floor or the 3-day suspension, so the
+    buy is a direction choice and waits for confirmation (strategy/policy.md, one
+    symbol, one direction). A missing signals file or an unreadable threshold
+    blocks every buy
   * the symbol is outside every wash-sale window in the review's <date>.tax.json
     (§20); a missing tax file, a failed Robinhood half or no usable Observatory
     summary blocks every buy, and a stale Observatory adds a warning to the report
@@ -41,7 +47,8 @@ named in the report):
   * the regular session is open
   * when the close the review priced from is over 24h old (a Monday after a
     Friday review), the entry still holds on the live quote review_equity_order
-    returns: at least 5% below the review's 20-day high from <date>.signals.json
+    returns: at least 5% below the review's 20-day high from <date>.signals.json,
+    and still under the TRIM threshold
   * review_equity_order reports customer_approval_required and no order_checks
 
 What is NOT re-derived here, and is trusted from the review: the committed-add
@@ -79,6 +86,7 @@ import argparse
 import datetime
 import importlib.util
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -313,6 +321,48 @@ def observatory_coverage(record_path: Path) -> tuple[str | None, str | None]:
     return None, None
 
 
+def trim_threshold(text: str) -> float | None:
+    """The TRIM drawdown threshold (percent) from config/trim-policy.md's table, or None."""
+    m = re.search(r"^\|\s*Drawdown threshold\s*\|\s*\*\*([0-9.]+)%\*\*", text, re.M)
+    return float(m.group(1)) if m else None
+
+
+def load_drawdowns(record_path: Path) -> dict[str, float] | None:
+    """{symbol: drawdownPct} from the review's <date>.signals.json; None when unreadable."""
+    path = record_path.with_name(record_path.name.replace(".decisions.json", ".signals.json"))
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    out: dict[str, float] = {}
+    for sym, v in (doc.get("symbols") or {}).items():
+        dd = _number(v.get("drawdownPct")) if isinstance(v, dict) else None
+        if dd is not None:
+            out[str(sym)] = dd
+    return out
+
+
+def trim_zone_reason(sym: str, drawdowns: dict[str, float] | None,
+                     threshold: float | None) -> str | None:
+    """Why a buy on `sym` must wait for confirmation because of the TRIM zone, or None.
+
+    On 2026-11-02 QQQM sat 10.70% below its high. Its TRIM was skipped by the $150
+    floor, so the record carried no exit and the $100 buy went out on its own; the buy
+    lifted the position past the floor and the TRIM came due four sessions later.
+    """
+    if threshold is None:
+        return "the TRIM threshold in config/trim-policy.md could not be read"
+    if drawdowns is None:
+        return "no signals file from the review to check the TRIM zone against"
+    dd = drawdowns.get(sym)
+    if dd is None:
+        return "the review's signals carry no drawdown for this symbol"
+    if dd >= threshold:
+        return (f"{dd:.2f}% below the 20-day high is past the {threshold:g}% TRIM threshold; "
+                "a buy there is a direction choice and waits for confirmation")
+    return None
+
+
 def load_highs(record_path: Path) -> dict[str, float]:
     """{symbol: 20-day high} from the review's <date>.signals.json, or empty."""
     path = record_path.with_name(record_path.name.replace(".decisions.json", ".signals.json"))
@@ -347,7 +397,8 @@ def live_price(review: Any) -> float | None:
     return None
 
 
-def live_recheck(review: Any, high: float | None) -> tuple[str | None, str]:
+def live_recheck(review: Any, high: float | None,
+                 trim_at: float | None = None) -> tuple[str | None, str]:
     """(skip reason or None, note) for an entry decided on a close that is stale now."""
     live = live_price(review)
     if live is None or not high:
@@ -357,6 +408,9 @@ def live_recheck(review: Any, high: float | None) -> tuple[str | None, str]:
     if dd < ENTRY_DRAWDOWN_PCT:
         return (f"live re-check: {dd:.2f}% below the 20-day high {high:g}, under the "
                 f"{ENTRY_DRAWDOWN_PCT:g}% entry", "")
+    if trim_at is not None and dd >= trim_at:
+        return (f"live re-check: {dd:.2f}% below the 20-day high {high:g}, past the "
+                f"{trim_at:g}% TRIM threshold; waits for confirmation", "")
     return None, f"live re-check {live:g}, {dd:.2f}% below {high:g}"
 
 
@@ -564,6 +618,20 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
 
     symbols = set(universe((repo / "strategy" / "policy.md").read_text()))
     candidates, skipped = select(record, symbols)
+    try:
+        trim_at = trim_threshold((repo / "config" / "trim-policy.md").read_text())
+    except OSError:
+        trim_at = None
+    if candidates:
+        drawdowns = load_drawdowns(record_path)
+        kept = []
+        for c in candidates:
+            why = trim_zone_reason(c["symbol"], drawdowns, trim_at)
+            if why:
+                skipped.append((c["symbol"], why))
+            else:
+                kept.append(c)
+        candidates = kept
     coverage_warning: str | None = None
     if candidates:
         block, coverage_warning = observatory_coverage(record_path)
@@ -674,7 +742,7 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
                 continue
             note = ""
             if stale:
-                why, note = live_recheck(review, highs.get(sym))
+                why, note = live_recheck(review, highs.get(sym), trim_at)
                 if why:
                     skipped.append((sym, why))
                     continue
