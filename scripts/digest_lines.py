@@ -21,9 +21,11 @@ saying so, never into silence:
   reviews/<date>.standing.json    how long each proposal has stood (code)
   reviews/<date>.tax.json         lot terms and the fills that count toward slots (code)
   reconcile/<date>.json           sheet drift and the trade-log check (job B)
+  reviews/<date>.overview.json    cross-account totals and flag counts (job C)
   shadow/latest.txt               shadow-check lines (code)
   digest/<date>.briefing.md       briefing note (digest model)
-  digest/<date>.reference-head.md US-accounts head of the reference message (digest model)
+  digest/<date>.reference-head.md US-accounts head, used only when overview.json is
+                                  missing or does not add up (digest model)
 
 Outputs: digest/<date>.agentic.md (Discord) and digest/<date>.md (Telegram).
 
@@ -235,17 +237,32 @@ def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]
     REDISTRIBUTE candidates are the exception: the review names their rule in free text
     ('REDISTRIBUTE one direction per review', 'redistribute: one symbol, one direction;
     committed-add cap'), a new wording most days. They share one line, each symbol
-    given the reason that applies to it: an exit proposed on it, or its own figure.
+    given the reason that applies to it: a sell proposed on it, or its own figure. A
+    trim is named as a trim: policy says a partial trim is not an exit, and on 11-04
+    "exit proposed" beside META read as if the position were being closed.
+
+    A wash-sale window that a proposed loss sale WOULD open is the other exception. The
+    review words it as a sentence ('If sold 2026-11-11 at a loss, buy block through
+    2026-12-11'), which read as "each If sold ..." in the generic form. Those share one
+    line per clearing date.
     """
-    selling = {d.get("symbol") for d in decisions if d.get("side") == "sell"}
+    sell_kind = {d.get("symbol"): d.get("kind") for d in decisions if d.get("side") == "sell"}
     groups: dict[tuple[str, str], list[str]] = {}
     no_recipient: list[str] = []
+    wash: dict[str, list[str]] = {}
     for b in blocked:
-        figure = str(b.get("value") or "n/a").split(";")[0].strip()
+        raw = str(b.get("value") or "n/a")
+        figure = raw.split(";")[0].strip()
         rule = str(b.get("rule") or "blocked")
         if "redistribute" in rule.lower():
-            why = "exit proposed" if b["symbol"] in selling else figure
+            kind = sell_kind.get(b["symbol"])
+            why = figure if kind is None else ("trim proposed" if kind == "trim"
+                                               else "exit proposed")
             no_recipient.append(f"**{b['symbol']}** ({why})")
+            continue
+        clears = conditional_wash_clear(rule, raw)
+        if clears:
+            wash.setdefault(clears, []).append(b["symbol"])
             continue
         groups.setdefault((rule, figure), []).append(b["symbol"])
     out = []
@@ -255,7 +272,31 @@ def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]
         out.append(f"Blocked ({rule}): {names} — {each}{figure}.")
     if no_recipient:
         out.append("No REDISTRIBUTE recipient: " + ", ".join(no_recipient) + ".")
+    for clears, symbols in wash.items():
+        names = ", ".join(f"**{s}**" for s in symbols)
+        out.append(f"Wash-sale hold if the stop-loss sells at a loss: {names} — "
+                   f"no buys until {long_date(clears)}.")
     return out
+
+
+def conditional_wash_clear(rule: str, value: str) -> str | None:
+    """The date buys may resume, for a wash-sale window a PROPOSED loss sale would open.
+
+    None for anything else, including a window an actual past sale already opened
+    (that one is a plain block and keeps the generic line). Takes 'clears YYYY-MM-DD'
+    when the review states it, else the day after 'through YYYY-MM-DD'.
+    """
+    text = f"{rule} {value}".lower()
+    if "wash" not in text or not ("proposed" in text or "if sold" in text):
+        return None
+    m = re.search(r"clears (\d{4}-\d{2}-\d{2})", text)
+    if m:
+        return m.group(1)
+    m = re.search(r"through (\d{4}-\d{2}-\d{2})", text)
+    if m:
+        day = dt.date.fromisoformat(m.group(1)) + dt.timedelta(days=1)
+        return day.isoformat()
+    return None
 
 
 def decision_section(rec: dict[str, Any]) -> list[str]:
@@ -328,15 +369,44 @@ def reconcile_section(recon: dict[str, Any] | None, recon_md: bool) -> list[str]
     alerts = recon.get("alerts") or []
     if not alerts:
         return []
+    moves, rest = pair_transfers(alerts)
     by_account: dict[str, list[str]] = {}
-    for a in sorted(alerts, key=lambda a: a["symbol"]):
+    for a in sorted(rest, key=lambda a: a["symbol"]):
         by_account.setdefault(a.get("account", "Unknown"), []).append(reconcile_entry(a))
     order = ACCOUNT_ORDER + sorted(k for k in by_account if k not in ACCOUNT_ORDER)
     out = ["Reconcile:",
            "Outside Agentic. The sheet follows the Observatory's Robinhood snapshot: "
            "refresh it rather than edit rows."]
+    if moves:
+        out.append("Moved between accounts: " + "; ".join(moves) + ".")
     out += [f"{acct}: " + "; ".join(by_account[acct]) + "." for acct in order if acct in by_account]
     return out
+
+
+def pair_transfers(alerts: list[dict[str, Any]]) -> tuple[list[str], list[dict[str, Any]]]:
+    """Split out positions that left one account and arrived whole in another.
+
+    On 11-05 five positions moved from Mid-term to Long-term, and the reconcile listed
+    each twice, as an 'add' in one account and a 'remove' in the other: ten entries for
+    five facts. An add and a remove of the same symbol and the same share count, in
+    different accounts, are one move.
+    """
+    removes = [a for a in alerts if a.get("kind") == "remove" and a.get("sheetQty") is not None]
+    used: set[int] = set()
+    moves: list[str] = []
+    rest: list[dict[str, Any]] = []
+    for a in sorted(alerts, key=lambda a: a["symbol"]):
+        if a.get("kind") == "add" and a.get("liveQty") is not None:
+            match = next((r for r in removes if id(r) not in used
+                          and r["symbol"] == a["symbol"] and r.get("account") != a.get("account")
+                          and Decimal(str(r["sheetQty"])) == Decimal(str(a["liveQty"]))), None)
+            if match is not None:
+                used.add(id(match))
+                moves.append(f"{a['symbol']} {qty(a['liveQty'])} sh "
+                             f"{match.get('account')} → {a.get('account')}")
+                continue
+        rest.append(a)
+    return moves, [a for a in rest if id(a) not in used]
 
 
 def unlogged_section(recon: dict[str, Any] | None) -> list[str]:
@@ -410,8 +480,57 @@ def agentic_message(logs: Path, date: str) -> str:
     return "\n\n".join("\n".join(b) for b in blocks) + "\n"
 
 
+def overview_head(doc: dict[str, Any] | None) -> str | None:
+    """The opening of the read-only message, from <date>.overview.json; None to fall back.
+
+    The digest model used to write this line from the overview markdown, and its shape
+    changed daily: on 11-05 the total appeared twice, on 11-10 the equities figure was
+    missing. A record that does not add up (an account whose parts miss its total, or
+    totals that miss the grand total, by more than 5 cents) is not rendered: the model's
+    own line is used instead, so a bad record never prints a wrong total as fact.
+    """
+    if not doc:
+        return None
+    accounts = doc.get("accounts") or []
+    grand = doc.get("grandTotalUsd")
+    if not accounts or grand is None:
+        return None
+    cent = Decimal("0.05")
+
+    def d(v: Any) -> Decimal:
+        return Decimal(str(v)) if v is not None else Decimal(0)
+
+    for a in accounts:
+        parts = d(a.get("equitiesUsd")) + d(a.get("cashUsd")) + d(a.get("cryptoUsd"))
+        if abs(parts - d(a.get("totalUsd"))) > cent:
+            return None
+    if abs(sum((d(a.get("totalUsd")) for a in accounts), Decimal(0)) - d(grand)) > cent:
+        return None
+    equities = sum((d(a.get("equitiesUsd")) for a in accounts), Decimal(0))
+    cash = [(a["name"], a["cashUsd"]) for a in accounts if a.get("cashUsd") is not None]
+    crypto = [(a["name"], a["cryptoUsd"]) for a in accounts if a.get("cryptoUsd") is not None]
+    # Plain text: this message goes to Telegram, where the heads were never bold.
+    line = (f"US accounts: {money(grand)} across {len(accounts)} accounts — "
+            f"{money(equities)} equities")
+    if cash:
+        total_cash = sum((d(v) for _, v in cash), Decimal(0))
+        line += f" + {money(total_cash)} cash (" + ", ".join(
+            f"{n} {money(v)}" for n, v in cash) + ")"
+    for name, value in crypto:
+        line += f" + {money(value)} crypto in {name}"
+    lines = [line + ".", "Read-only context; Korean holdings are excluded."]
+    flagged = doc.get("flagged") or {}
+    count = int(flagged.get("count") or 0)
+    if count:
+        agentic = int(flagged.get("agentic") or 0)
+        where = "all outside Agentic" if not agentic else f"{agentic} in Agentic"
+        lines.append(f"⚠️ {count} positions flagged across all accounts — see full review; {where}.")
+    return "\n".join(lines)
+
+
 def reference_message(logs: Path, date: str) -> str:
-    head = _text(logs / "digest" / f"{date}.reference-head.md")
+    head = overview_head(_load(logs / "reviews" / f"{date}.overview.json")) \
+        or _text(logs / "digest" / f"{date}.reference-head.md")
     blocks = [head or "US accounts: overview unavailable in today's digest — read-only context; "
                       "see logs/reviews/ for the full review."]
     recon = _load(logs / "reconcile" / f"{date}.json")
