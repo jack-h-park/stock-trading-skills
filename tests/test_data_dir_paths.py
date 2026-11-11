@@ -15,6 +15,8 @@ OLD = "data/" + "stock-management"
 
 
 def test_no_file_names_the_retired_data_folder():
-    out = subprocess.run(["git", "grep", "-n", "-F", OLD], cwd=REPO,
-                         capture_output=True, text=True)
+    # This file names the old folder in its own docstring, to say what replaced it.
+    out = subprocess.run(["git", "grep", "-n", "-F", OLD, "--", ".",
+                          ":(exclude)tests/test_data_dir_paths.py"],
+                         cwd=REPO, capture_output=True, text=True)
     assert out.stdout == "", f"retired data folder still referenced:\n{out.stdout}"
