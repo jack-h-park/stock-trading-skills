@@ -102,8 +102,8 @@ Mid-term `<MIDTERM_ACCOUNT>`) and external brokerages are **reference/reconcile 
     ├─ Robinhood MCP: portfolio, positions, quotes, historicals  (read-only)
     ├─ compute 20-day-high dip signals  →  logs/reviews/<date>.md
     ├─ Google Drive MCP: read sheet  →  diff vs RH  →  logs/reconcile/<date>.{md,json}
-    ├─ digest model: briefing note + reference head (two short fragments)
-    └─ scripts/digest_lines.py: assemble both digests from the day's records
+    ├─ digest model: briefing note (one short fragment)
+    └─ scripts/digest_lines.py: assemble the Agentic digest (Discord) from the day's records
        (nothing is committed — logs/ is gitignored)
         ⚠ read-only proxy + enabled_tools exclude place/cancel order + sheet write → cannot trade
 

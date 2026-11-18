@@ -89,12 +89,17 @@ def _expanded(name: str) -> str:
     return proc.stdout
 
 
-def test_the_digest_prompt_keeps_its_dollar_sign_and_writes_fragments_only():
+def test_the_digest_prompt_writes_the_briefing_fragment_only():
     prompt = _expanded("PROMPT_D")
-    assert "'US accounts: $X across N accounts'" in prompt
     assert "logs/digest/2026-10-07.briefing.md" in prompt
-    assert "logs/digest/2026-10-07.reference-head.md" in prompt
-    assert "Do NOT write logs/digest/2026-10-07.agentic.md or logs/digest/2026-10-07.md" in prompt
+    assert "Do NOT write logs/digest/2026-10-07.agentic.md" in prompt
+    # The Telegram digest and its model-written head were dropped (decisions §24).
+    assert "reference-head" not in prompt
+    assert "logs/digest/2026-10-07.md" not in prompt
+
+
+def test_the_overview_job_no_longer_writes_a_record_nobody_reads():
+    assert "overview.json" not in _expanded("PROMPT_C")
 
 
 def test_the_reconcile_prompt_asks_for_the_record_the_digest_reads():

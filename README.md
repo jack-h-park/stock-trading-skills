@@ -153,7 +153,8 @@ loads a LaunchAgent for weekdays at 13:30 PT — 30 minutes after the US close.
 Use this if you are not running an agent runtime of your own.
 
 **Hermes cron.** `scripts/hermes/install-cron.sh` declares the same job under the
-author's `trader` profile, delivering the digest to Telegram. It runs only on the
+author's `trader` profile, sending the Agentic digest to Discord and staying silent on
+Telegram unless something failed (docs/decisions.md §24). It runs only on the
 host whose `~/.hermes/role` file says `ops` (the account name does not matter) and
 refuses anywhere else; it exists so the job's definition stays versioned in this repo
 rather than in the runtime. The job is created **paused** — installing is not enabling.

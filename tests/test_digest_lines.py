@@ -190,8 +190,7 @@ def test_the_full_messages(tmp_path):
            f"reconcile__{DATE}.json": recon,
            f"reconcile__{DATE}.md": "report",
            "shadow__latest.txt": "shadow-check: earlier sessions\n  = 2026-10-15: now verified",
-           f"digest__{DATE}.briefing.md": "Briefing: NVDA weakness tied to rate fears.",
-           f"digest__{DATE}.reference-head.md": "US accounts: $419,806.31 across 5 accounts"})
+           f"digest__{DATE}.briefing.md": "Briefing: NVDA weakness tied to rate fears."})
     agentic = dl.agentic_message(logs, DATE)
     blocks = agentic.strip().split("\n\n")
     assert blocks[0] == ("**Hermes Trader — Agentic**\nSleeve **$2,166.09**, day +$6.63 (+0.31%); "
@@ -204,9 +203,9 @@ def test_the_full_messages(tmp_path):
     assert any(b.startswith("Shadow check:\nshadow-check:") for b in blocks)
     assert "Briefing: NVDA weakness tied to rate fears." in blocks
 
-    reference = dl.reference_message(logs, DATE)
-    assert reference == ("US accounts: $419,806.31 across 5 accounts\n\n"
-                         "Trade log: no filled Agentic orders in the check window.\n")
+    # Reconcile drifted, so only the trade-log check is reported as passing.
+    assert blocks[-2] == "Briefing: NVDA weakness tied to rate fears."
+    assert "Checks: no filled Agentic orders in the trade-log window." in blocks
 
 
 def test_departures_and_decision_requests_have_one_shape():
@@ -229,8 +228,8 @@ def test_missing_records_say_so_instead_of_going_quiet(tmp_path):
     assert "No decision record today" in agentic
     assert "Reconcile: did not run today." in agentic
     assert "slots unavailable" in agentic
-    reference = dl.reference_message(logs, DATE)
-    assert reference.startswith("US accounts: overview unavailable")
+    # No reconcile record: the checks did not run, so nothing may say they passed.
+    assert "Checks:" not in agentic
 
 
 def test_a_malformed_record_still_produces_a_message(tmp_path):
@@ -319,38 +318,26 @@ def test_a_position_moved_between_accounts_is_one_entry():
     assert "Mid-term: remove SPY (−0.026142 sh); remove TSLA (−2 sh)." in lines
 
 
-OVERVIEW = {"date": "2026-11-10", "accounts": [
-    {"name": "Agentic", "equitiesUsd": 1456.37, "cashUsd": 614.87, "cryptoUsd": None,
-     "totalUsd": 2071.24},
-    {"name": "Long-term", "equitiesUsd": 150000.00, "cashUsd": 4032.28, "cryptoUsd": None,
-     "totalUsd": 154032.28},
-    {"name": "Mid-term", "equitiesUsd": 90000.00, "cashUsd": 1888.86, "cryptoUsd": 26085.29,
-     "totalUsd": 117974.15},
-    {"name": "Chase", "equitiesUsd": 80000.00, "cashUsd": None, "cryptoUsd": None,
-     "totalUsd": 80000.00},
-    {"name": "Merrill", "equitiesUsd": 38000.00, "cashUsd": None, "cryptoUsd": None,
-     "totalUsd": 38000.00}],
-    "grandTotalUsd": 392077.67, "flagged": {"count": 23, "agentic": 1}}
+def test_passing_checks_close_the_agentic_message_in_one_line():
+    clean = {"alerts": [], "tradeLog": {"filledInWindow": 2, "findings": []}}
+    assert dl.checks_line(clean) == (
+        "Checks: the sheet matches Robinhood; all 2 filled Agentic orders logged.")
+    both_failed = {"alerts": [{"symbol": "PM"}], "tradeLog": {"findings": [{"symbol": "VOO"}]}}
+    assert dl.checks_line(both_failed) is None
+    assert dl.checks_line(None) is None
 
 
-def test_the_reference_head_is_rendered_from_the_overview_record():
-    assert dl.overview_head(OVERVIEW) == (
-        "US accounts: $392,077.67 across 5 accounts — $359,456.37 equities + $6,536.01 cash "
-        "(Agentic $614.87, Long-term $4,032.28, Mid-term $1,888.86) + $26,085.29 crypto in "
-        "Mid-term.\n"
-        "Read-only context; Korean holdings are excluded.\n"
-        "⚠️ 23 positions flagged across all accounts — see full review; 1 in Agentic.")
-
-
-def test_an_overview_that_does_not_add_up_falls_back_to_the_model_head(tmp_path):
-    bad = json.loads(json.dumps(OVERVIEW))
-    bad["grandTotalUsd"] = 400000.00
-    assert dl.overview_head(bad) is None
-    logs = tmp_path / "logs"
-    (logs / "reviews").mkdir(parents=True)
-    (logs / "digest").mkdir()
-    (logs / "reviews" / f"{DATE}.overview.json").write_text(json.dumps(bad))
-    (logs / "digest" / f"{DATE}.reference-head.md").write_text("US accounts: from the model.")
-    assert dl.reference_message(logs, DATE).startswith("US accounts: from the model.")
-    (logs / "reviews" / f"{DATE}.overview.json").write_text(json.dumps(OVERVIEW))
-    assert dl.reference_message(logs, DATE).startswith("US accounts: $392,077.67")
+def test_only_the_agentic_message_is_written(tmp_path):
+    # The read-only Telegram digest was dropped on 2026-11-18 (decisions §24); the cron
+    # wrapper delivers <date>.md to Telegram whenever it exists, so it must not appear.
+    logs = _logs(tmp_path, **{f"reviews__{DATE}.md": REVIEW,
+                              f"reconcile__{DATE}.json": {"alerts": [], "tradeLog": {}}})
+    argv, sys.argv = sys.argv, ["digest_lines.py", "--repo", str(tmp_path), "--date", DATE]
+    try:
+        dl.main()
+    finally:
+        sys.argv = argv
+    written = sorted(p.name for p in (logs / "digest").iterdir())
+    assert written == [f"{DATE}.agentic.md"]
+    text = (logs / "digest" / f"{DATE}.agentic.md").read_text()
+    assert "Checks: the sheet matches Robinhood; no filled Agentic orders" in text

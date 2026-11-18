@@ -14,8 +14,7 @@
 #   B — reconcile: live positions vs holdings sheet, AND filled Agentic orders
 #                  vs logs/trades/ (the trade-log check) -> logs/reconcile/<date>.md
 #   C — overview: full cross-account portfolio view -> logs/reviews/<date>.overview.md
-#   merge+digest: assemble overview into the review, write the Telegram digest,
-#                 and write the digests. It commits nothing: logs/ is gitignored.
+#   merge+digest: assemble overview into the review and write the Agentic digest. It commits nothing: logs/ is gitignored.
 #
 # READ-ONLY BY DESIGN, twice over. Robinhood is reached only through
 # mcp-robinhood-proxy.py --read-only, which refuses every write; and codex is
@@ -336,8 +335,6 @@ Steps:
       - Top 5 positions by current value across all accounts.
 3. Write a SELF-CONTAINED markdown section to logs/reviews/${TODAY}.overview.md (overwrite if it exists) titled with a '## Full Portfolio Overview' heading, containing: (1) account-by-account summary table (account | # positions | total value), (2) a clearly labelled cross-account grand total line, (3) highlights table.
 3a. THE GRAND TOTAL ALWAYS MEANS THE SAME THING: every asset every account holds — equities, cash AND crypto — with nothing excluded. State the composition on the total line, naming each non-equity component and its amount (e.g. 'includes \$1,982.97 cash and \$19,908.20 crypto in Mid-term'). This is a day-over-day figure Jack tracks, so a total whose definition moves is worse than one that is merely large: on 2026-07-30 crypto was excluded and said so, on 07-31 it was silently included, and the number jumped \$22,642 on a day the US market rose about 1%. If a component cannot be priced, still list it and say so rather than dropping it from the sum. This section is informational only — all proposals and execution remain scoped to the Agentic account. Do not write to logs/reviews/${TODAY}.md. Do not commit.
-3b. OVERVIEW RECORD — also write logs/reviews/${TODAY}.overview.json with the same figures as machine-readable JSON. The opening of Jack's read-only message is rendered from this file in code. Copy the numbers from the section you just wrote; never recompute them. One entry per account in the summary table, in the same order, using these names for the Robinhood accounts: Agentic, Long-term, Mid-term; external accounts by brokerage name (Chase, Merrill, Fidelity). Use null for a component the account does not have or that could not be priced, never 0. 'flagged' counts the positions in the highlights table under the drawdown and gain rules (not the top-5 rows), and 'agentic' how many of those are in the Agentic account. Exact shape, no extra keys:
-{\"date\": \"${TODAY}\", \"accounts\": [{\"name\": \"Agentic\", \"equitiesUsd\": <number>, \"cashUsd\": <number or null>, \"cryptoUsd\": <number or null>, \"totalUsd\": <number>}], \"grandTotalUsd\": <number>, \"flagged\": {\"count\": <number>, \"agentic\": <number>}}
 
 ${PRICE_BASIS}
 ${CRITICAL_RO}"
@@ -430,7 +427,7 @@ mkdir -p "$REPO/logs/reviews"
 [ -s "$REPO/$SIGNALS_FILE" ] || echo "signal_windows: no file — job A computes the 20-day high itself" >> "$RUNLOG"
 # The digest reads this record, so one left by an earlier run today must not stand
 # in for a reconcile that failed this time.
-rm -f "$REPO/logs/reconcile/${TODAY}.json" "$REPO/logs/reviews/${TODAY}.overview.json"
+rm -f "$REPO/logs/reconcile/${TODAY}.json"
 run_job "$PROMPT_A" "$TMP_A_EVENTS" "$TMP_A_ERR" A & PID_A=$!
 run_job "$PROMPT_B" "$TMP_B_EVENTS" "$TMP_B_ERR" B & PID_B=$!
 run_job "$PROMPT_C" "$TMP_C_EVENTS" "$TMP_C_ERR" C & PID_C=$!
@@ -476,34 +473,30 @@ Steps:
 1. Read logs/reviews/${TODAY}.md (contains the Agentic BUY/TRIM proposals and a 'Full Portfolio Overview' section) and logs/reconcile/${TODAY}.md (the reconcile drift report). If either file is missing, note it but continue with what exists. If the review file holds more than one timestamped section (a manual run earlier the same day), use only the last one and never mention the earlier ones: they were computed on prices that were not the close.
 2. BRIEFING CONTEXT: read ${BRIEFING_JSON} (already resolved — use that exact path and do not expand ~ yourself). Extract the macro, moverNotes, and actions fields. Keep at most 2 observations directly relevant to the universe symbols or current open positions. If the file does not exist, skip silently.
 2b. ACT-NOW OVERRIDE: each action carries a \"priority\" of act-now, this-week, or fyi. An action whose priority is \"act-now\" is ALWAYS carried into the digest, in addition to the 2 relevance-picked observations and regardless of whether its symbol is in the Agentic universe — the briefing allows at most one per day and zero is the normal case, so it is the one item the writer marked as decidable today. Lead the briefing note with it, and say plainly if it concerns a holding outside the Agentic account so Jack knows it is not actionable by this sleeve. CARRY ITS DEADLINE ONLY IF THAT DEADLINE IS STILL IN THE FUTURE WHEN YOU WRITE THIS. The briefing publishes at 08:00 PT, mid-session; this review runs post-close, so an act-now deadline the briefing wrote as \"before the close\", \"before the bell\" or \"today\" has already expired by the time you repeat it, and repeating it verbatim asks Jack to do something he can no longer do. On 2026-09-01 the PANW item went out at 13:41 PT saying \"decide before the bell\" — 41 minutes after the 13:00 bell, on a session the stock fell 5.2% during. Check the deadline against the current time and rewrite it: if the window is still open say so plainly, if the next chance is the following session say that, and if the catalyst has already happened say THAT and drop the instruction entirely rather than dressing a closed decision as an open one. This is the same arithmetic the slots line below already does — a deadline nobody can meet is the sibling of a budget nobody can spend. Never restate an act-now as a proposal or a guardrail input: it is context for Jack, and it must not change the ranked BUY list.
-3. TWO FRAGMENTS. Both digests are assembled in code by scripts/digest_lines.py from the day's records — the sleeve and slots line, every proposal, block, departure and decision request, the exits with their standing and tax term, reconcile, unlogged trades and the shadow check. Do NOT write logs/digest/${TODAY}.agentic.md or logs/digest/${TODAY}.md, and do not restate any of those items: those lines used to be retyped here from a format in this prompt, and the format did not hold from one day to the next. You write only the two parts that need judgement. Plain sentences, warm but concise, no markdown tables, no headers. Name accounts by role only (Agentic, Long-term, Mid-term); never write an account number, full or masked.
+3. ONE FRAGMENT. The digest is assembled in code by scripts/digest_lines.py from the day's records — the sleeve and slots line, every proposal, block, departure and decision request, the exits with their standing and tax term, reconcile, unlogged trades and the shadow check. Do NOT write logs/digest/${TODAY}.agentic.md, and do not restate any of those items: those lines used to be retyped here from a format in this prompt, and the format did not hold from one day to the next. You write only the part that needs judgement. Plain sentences, warm but concise, no markdown tables, no headers. Name accounts by role only (Agentic, Long-term, Mid-term); never write an account number, full or masked.
 
 3a. BRIEFING NOTE — write logs/digest/${TODAY}.briefing.md (overwrite if it exists), <= 400 characters, from steps 2 and 2b: the act-now item first when there is one, then the relevance-picked observations. It is placed in the Agentic message, which goes to Discord, so a briefing observation that exists BECAUSE of an Agentic signal belongs here next to the proposals it explains. Start it with 'Briefing:'. Say plainly when an item concerns a holding outside the Agentic account. If there is nothing to say, write an empty file.
 
-3b. REFERENCE HEAD — write logs/digest/${TODAY}.reference-head.md (overwrite if it exists), <= 700 characters. It opens the read-only message that goes to Telegram; the reconcile-clean and trade-log-clean lines are appended to it in code.
-   - Opening line: 'US accounts: \$X across N accounts' — the cross-account grand total from the 'Full Portfolio Overview' section, carried verbatim along with the composition note that section states (cash, crypto). Call it US accounts, never 'total portfolio': that figure covers the US brokerages only and excludes the Korean holdings entirely. Say in the next sentence that this message is read-only context.
-   - If the overview flagged any position (notable drawdown ≤ −15% or gain ≥ +50%), one line: '⚠️ N positions flagged across all accounts — see full review', and say that the flagged holdings are outside Agentic when they are.
-   - NO briefing note. The morning briefing already sent Jack its own items on this same channel, hours earlier; repeating them here makes the afternoon message look like news when it is a ledger.
-   - If the overview section is missing, write one line saying the cross-account overview did not run today.
-   - This head is the fallback: when logs/reviews/${TODAY}.overview.json is present and adds up, the opening is rendered from it in code and this file is not used.
 4. Do NOT commit or push anything. logs/ is gitignored: this repo is public, and the journal names positions and balances. The reports stay on this machine and reach Jack through the digest below; the archive under $STOCK_DATA_DIR/trading-logs/ is where history is kept.
 
-CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. Write only the two fragments under logs/digest."
+CRITICAL: Do NOT place or cancel any orders. Do not write to the Google Sheet. Write only the briefing fragment under logs/digest."
 
 # How long each of today's proposals has stood, computed in code from the decision
 # records rather than counted by the model.
 "$PYTHON" "$HERE/standing.py" --repo "$REPO" --date "$TODAY" --out "$REPO/$STANDING_FILE" 2>>"$RUNLOG" || true
 
-# Both digests are per-day artefacts the wrapper delivers and nothing else reads;
-# a stale one from an earlier run would otherwise be re-sent as today's.
+# The digest is a per-day artefact the wrapper delivers and nothing else reads; a
+# stale one from an earlier run would otherwise be re-sent as today's. The Telegram
+# digest (<date>.md) and its reference head are no longer written (decisions §24),
+# and are still removed so a file left by an older run cannot be delivered.
 rm -f "$REPO/logs/digest/${TODAY}.agentic.md" "$REPO/logs/digest/${TODAY}.md" \
   "$REPO/logs/digest/${TODAY}.briefing.md" "$REPO/logs/digest/${TODAY}.reference-head.md"
 
 echo "----- digest+commit step $(date '+%H:%M:%S %Z') -----" >> "$RUNLOG"
 _run_with_retry "$PROMPT_D" "$TMP_D_EVENTS" "$TMP_D_ERR" D digest
 RC_D=$?
-# Assemble both messages from the records and D's two fragments. Runs whether or not
-# D succeeded: without the fragments the messages still carry every proposal.
+# Assemble the message from the records and D's briefing fragment. Runs whether or
+# not D succeeded: without the fragment the message still carries every proposal.
 "$PYTHON" "$HERE/digest_lines.py" --repo "$REPO" --date "$TODAY" 2>>"$RUNLOG" \
   || echo "digest_lines: assembly failed — see the line above" >> "$RUNLOG"
 # Did the deadline rewrite in PROMPT_D actually hold? Checked against the message
@@ -512,8 +505,7 @@ RC_D=$?
 # prompt rule cannot report on itself. Never gates: a message with a stale deadline
 # is still worth sending, what must not happen is nobody noticing it went out.
 "$PYTHON" "$HERE/check-digest-deadlines.py" \
-  "$REPO/logs/digest/${TODAY}.agentic.md" "$REPO/logs/digest/${TODAY}.md" \
-  >> "$RUNLOG" 2>&1 || true
+  "$REPO/logs/digest/${TODAY}.agentic.md" >> "$RUNLOG" 2>&1 || true
 
 echo "----- digest stderr -----" >> "$RUNLOG"; cat "$TMP_D_ERR" >> "$RUNLOG" 2>/dev/null
 echo "----- digest events -----" >> "$RUNLOG"; cat "$TMP_D_EVENTS" >> "$RUNLOG" 2>/dev/null
