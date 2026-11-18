@@ -116,6 +116,7 @@ belongs nowhere.
 
 - Reconcile **drift** → Agentic/Discord message, with what to change in the sheet.
 - Reconcile **match** → one line in the reference message; "no drift" is the expected state.
+  (Superseded by §24: the reference message is gone and this line closes the Agentic one.)
 - Briefing note → removed. The morning briefing sends its own act-now on the same channel.
 - Korean line → removed from the digest. What this message uniquely carries is the
   cross-account US total, which the briefing does not: that one is equity-only, priced at a
@@ -480,6 +481,7 @@ slots line, every proposal, block, departure and decision request, each exit's s
 tax term, the reconcile and unlogged-trade sections and the shadow check from the records
 the review already writes. Job B now also writes `logs/reconcile/<date>.json`. The digest
 model writes two fragments only: the briefing note and the head of the reference message.
+(§24 removed the reference message, and with it the second fragment.)
 
 **Why.** Those lines were already copies of numbers in a file, retyped by the digest model
 from a format spelled out in its prompt, and the format did not hold. Over three
@@ -554,3 +556,28 @@ would remove the option of adding to an ETF (which has no stop) in a deep drawdo
 Keeping the buy auto-eligible: it lets the system buy on a reading that says cut,
 with no one looking. Across every decision record to date this would have changed one
 order, so the cost in confirmations is small.
+
+## 24. No afternoon Telegram digest; passing checks close the Agentic message (2026-11-18)
+
+**Decision.** The review sends one message, the Agentic one, to Discord. The read-only
+Telegram digest that followed it is no longer written or delivered, and the wrapper
+prints nothing on a normal day, which Hermes treats as silent. When the reconcile and
+trade-log checks pass they close the Agentic message in one `Checks:` line; when either
+fails it is a section of that message, as before (§13). Job C still writes the Full
+Portfolio Overview into the review, but no longer the `overview.json` record, and the
+digest model no longer writes a reference head. Stdout still carries a failure alert,
+and the Agentic message itself when Discord cannot take it.
+
+**Why.** The message had three lines of substance and none of them held up. The US
+total repeated a number with no change from the day before, so it read the same every
+day. "N positions flagged — see full review" pointed at a file on the ops host that
+cannot be opened from a phone, and named none of the positions. The two check lines
+said that nothing had happened. The morning briefing already covers the portfolio on
+Telegram, and a check result belongs next to the proposals it qualifies.
+
+**Chosen against.** Rewriting it as a post-close change summary (per-account day
+change, flags that appeared or cleared, checks only on failure). It would carry real
+information, but it needs the flag list as a record and a day-over-day comparison that
+transfers distort, for a message whose job the morning briefing mostly does. The
+cross-account total including cash and crypto is no longer pushed anywhere; it stays in
+the review, and the change summary remains the way to bring it back if it is missed.

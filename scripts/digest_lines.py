@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble the two review digests from the day's records, so their fixed lines are fixed.
+"""Assemble the review digest from the day's records, so its fixed lines are fixed.
 
 The digest model used to write every line of both messages from a format spelled out in
 the prompt, and the format did not hold: across three consecutive sessions the sleeve
@@ -9,9 +9,13 @@ same departure was worded three different ways. Each of those lines is a copy of
 number already in a file, so here they are rendered from the file instead.
 
 What is still written by a model is only what needs judgement: the briefing note (which
-items matter and whether a deadline has passed) and the head of the reference message
-(the cross-account total, whose source is the overview prose). The digest step writes
-those as two fragments; this script places them.
+items matter and whether a deadline has passed). The digest step writes it as a fragment;
+this script places it.
+
+There used to be a second, read-only message for Telegram: the cross-account US total,
+a flag count pointing at a review the reader could not open, and the two clean-check
+lines. It was dropped on 2026-11-18 (docs/decisions.md §24). The checks now close the
+Agentic message in one line when they pass, and appear as sections there when they fail.
 
 Inputs, all under logs/ and all optional — a missing one turns its section into a line
 saying so, never into silence:
@@ -21,13 +25,10 @@ saying so, never into silence:
   reviews/<date>.standing.json    how long each proposal has stood (code)
   reviews/<date>.tax.json         lot terms and the fills that count toward slots (code)
   reconcile/<date>.json           sheet drift and the trade-log check (job B)
-  reviews/<date>.overview.json    cross-account totals and flag counts (job C)
   shadow/latest.txt               shadow-check lines (code)
   digest/<date>.briefing.md       briefing note (digest model)
-  digest/<date>.reference-head.md US-accounts head, used only when overview.json is
-                                  missing or does not add up (digest model)
 
-Outputs: digest/<date>.agentic.md (Discord) and digest/<date>.md (Telegram).
+Output: digest/<date>.agentic.md (Discord).
 
 usage: digest_lines.py --repo PATH --date YYYY-MM-DD
 """
@@ -473,6 +474,9 @@ def agentic_message(logs: Path, date: str) -> str:
                             (logs / "reconcile" / f"{date}.md").exists())):
         if section:
             blocks.append(section)
+    checks = guarded("Checks", checks_section, recon)
+    if checks:
+        blocks.append(checks)
     shadow = _text(logs / "shadow" / "latest.txt")
     if shadow:
         blocks.append(["Shadow check:", shadow])
@@ -483,72 +487,29 @@ def agentic_message(logs: Path, date: str) -> str:
     return "\n\n".join("\n".join(b) for b in blocks) + "\n"
 
 
-def overview_head(doc: dict[str, Any] | None) -> str | None:
-    """The opening of the read-only message, from <date>.overview.json; None to fall back.
+def checks_line(recon: dict[str, Any] | None) -> str | None:
+    """One line naming the checks that passed, or None when neither did (or neither ran).
 
-    The digest model used to write this line from the overview markdown, and its shape
-    changed daily: on 11-05 the total appeared twice, on 11-10 the equities figure was
-    missing. A record that does not add up (an account whose parts miss its total, or
-    totals that miss the grand total, by more than 5 cents) is not rendered: the model's
-    own line is used instead, so a bad record never prints a wrong total as fact.
+    A failing check is its own section above (Reconcile, Unlogged trades), because it
+    asks Jack to change something. A passing one only needs to say that it ran: before
+    2026-11-18 that took two lines of a separate Telegram message.
     """
-    if not doc:
+    if recon is None:
         return None
-    accounts = doc.get("accounts") or []
-    grand = doc.get("grandTotalUsd")
-    if not accounts or grand is None:
-        return None
-    cent = Decimal("0.05")
-
-    def d(v: Any) -> Decimal:
-        return Decimal(str(v)) if v is not None else Decimal(0)
-
-    for a in accounts:
-        parts = d(a.get("equitiesUsd")) + d(a.get("cashUsd")) + d(a.get("cryptoUsd"))
-        if abs(parts - d(a.get("totalUsd"))) > cent:
-            return None
-    if abs(sum((d(a.get("totalUsd")) for a in accounts), Decimal(0)) - d(grand)) > cent:
-        return None
-    equities = sum((d(a.get("equitiesUsd")) for a in accounts), Decimal(0))
-    cash = [(a["name"], a["cashUsd"]) for a in accounts if a.get("cashUsd") is not None]
-    crypto = [(a["name"], a["cryptoUsd"]) for a in accounts if a.get("cryptoUsd") is not None]
-    # Plain text: this message goes to Telegram, where the heads were never bold.
-    line = (f"US accounts: {money(grand)} across {len(accounts)} accounts — "
-            f"{money(equities)} equities")
-    if cash:
-        total_cash = sum((d(v) for _, v in cash), Decimal(0))
-        line += f" + {money(total_cash)} cash (" + ", ".join(
-            f"{n} {money(v)}" for n, v in cash) + ")"
-    for name, value in crypto:
-        line += f" + {money(value)} crypto in {name}"
-    lines = [line + ".", "Read-only context; Korean holdings are excluded."]
-    flagged = doc.get("flagged") or {}
-    count = int(flagged.get("count") or 0)
-    if count:
-        agentic = int(flagged.get("agentic") or 0)
-        where = "all outside Agentic" if not agentic else f"{agentic} in Agentic"
-        lines.append(f"⚠️ {count} positions flagged across all accounts — see full review; {where}.")
-    return "\n".join(lines)
+    parts = []
+    if not recon.get("alerts"):
+        parts.append("the sheet matches Robinhood")
+    trade_log = recon.get("tradeLog") or {}
+    if not trade_log.get("findings"):
+        n = trade_log.get("filledInWindow", 0)
+        parts.append("no filled Agentic orders in the trade-log window" if not n
+                     else f"all {n} filled Agentic orders logged")
+    return "Checks: " + "; ".join(parts) + "." if parts else None
 
 
-def reference_message(logs: Path, date: str) -> str:
-    head = overview_head(_load(logs / "reviews" / f"{date}.overview.json")) \
-        or _text(logs / "digest" / f"{date}.reference-head.md")
-    blocks = [head or "US accounts: overview unavailable in today's digest — read-only context; "
-                      "see logs/reviews/ for the full review."]
-    recon = _load(logs / "reconcile" / f"{date}.json")
-    if recon is not None:
-        lines = []
-        if not recon.get("alerts"):
-            lines.append("Reconcile: the sheet matches Robinhood.")
-        trade_log = recon.get("tradeLog") or {}
-        if not trade_log.get("findings"):
-            n = trade_log.get("filledInWindow", 0)
-            lines.append("Trade log: no filled Agentic orders in the check window."
-                         if not n else f"Trade log: all {n} filled Agentic orders logged.")
-        if lines:
-            blocks.append("\n".join(lines))
-    return "\n\n".join(blocks) + "\n"
+def checks_section(recon: dict[str, Any] | None) -> list[str]:
+    line = checks_line(recon)
+    return [line] if line else []
 
 
 def main() -> int:
@@ -561,8 +522,7 @@ def main() -> int:
     digest.mkdir(parents=True, exist_ok=True)
     rc = 0
     failed_sections.clear()
-    for name, build in ((f"{args.date}.agentic.md", agentic_message),
-                        (f"{args.date}.md", reference_message)):
+    for name, build in ((f"{args.date}.agentic.md", agentic_message),):
         try:
             text = build(logs, args.date)
         except RENDER_ERRORS as exc:

@@ -85,18 +85,15 @@ mkdir -p "$REPO/logs/cron"
 bash "$RUNNER" 2>>"$RUNLOG"
 RC=$?
 
-DIGEST="$REPO/logs/digest/${DATE_ISO}.md"
 AGENTIC="$REPO/logs/digest/${DATE_ISO}.agentic.md"
 STATUS="$REPO/logs/cron/${DATE_ISO}.status"
 
-# The Agentic proposals are the only part Jack can act on, so they go to Discord —
-# interaction-required — while the read-only cross-account context stays on
-# Telegram via this script's stdout. Hermes delivers stdout to one channel only,
-# so the second destination is sent from here.
-#
-# Falls back to stdout when the profile has no Discord credentials: two clearly
-# separated Telegram messages beat losing the proposals entirely, and the split
-# starts working the moment the .env gains the keys — no redeploy.
+# The Agentic message goes to Discord, sent from here. This script's stdout is what
+# Hermes delivers to Telegram, and on a normal day it is now empty, which Hermes
+# treats as silent: the read-only Telegram digest that used to follow was dropped on
+# 2026-11-18 (docs/decisions.md §24). Stdout still carries the two things that must
+# reach Jack somewhere: a failure alert, and the Agentic message itself when Discord
+# cannot take it (no credentials, or a failed send).
 
 # Hermes cron --script subprocesses do not inherit the profile .env, and the
 # repo's _env.sh carries only PATH. Pull the two
@@ -111,16 +108,12 @@ if [ -r "$PROFILE_ENV" ]; then
   unset _k _v
 fi
 
-# The Korean line used to be printed above this digest. It is gone: the morning
-# briefing already sends that exact block on this same channel, so repeating it
-# here made the afternoon message open with something Jack had read hours
-# earlier. What this message is FOR is the cross-account US total, which the
-# briefing does not carry — it is equity-only, priced at a different close, and
-# says nothing about cash or crypto. The first line now says so itself.
-#
-# Kept as history rather than deleted quietly: the reason the line existed was
-# to stop the US figure below being read as the whole portfolio, and that job is
-# now done by the wording of the US line instead of by a duplicate.
+# The read-only Telegram digest is gone. It carried the cross-account US total, a
+# flag count that pointed at a review file the reader could not open, and two
+# clean-check lines. The morning briefing already covers the portfolio on Telegram,
+# the checks now close the Agentic message, and the total stays in the review. Its
+# predecessor, the Korean line, was removed for the same reason earlier: it repeated
+# what the morning briefing had sent hours before.
 
 # The usage footer send_discord.py appends is computed from Hermes' session
 # store, which cannot see this job: run-review.sh spends its money in four
@@ -148,9 +141,6 @@ deliver_agentic() {
     echo "⚠️ Agentic proposals could not be sent to Discord; delivering here instead."
   fi
   cat "$AGENTIC"
-  echo
-  echo "———"
-  echo
 }
 
 # Name the phases that actually failed, from the runner's status file. Reading the
@@ -186,21 +176,17 @@ if [ "$RC" -ne 0 ]; then
   # A partial failure still leaves real work on disk. Suppressing the digest
   # because one phase died threw away the proposals the surviving phases had
   # already produced and paid for, so lead with the warning and deliver anyway.
-  if [ -f "$DIGEST" ] || [ -f "$AGENTIC" ]; then
+  if [ -f "$AGENTIC" ]; then
     echo "⚠️ trading-review PARTIAL $DATE_ISO — ${FAILED}"
-    echo "What follows is built from the phases that did finish; anything owned by a failed phase is missing."
-    echo
+    echo "The Agentic message is built from the phases that did finish and goes to Discord (or follows here if Discord cannot take it); anything owned by a failed phase is missing from it."
     deliver_agentic
-    [ -f "$DIGEST" ] && cat "$DIGEST"
   else
     echo "⚠️ trading-review FAILED $DATE_ISO (rc=$RC) — ${FAILED}"
   fi
   exit 1
 fi
 
-# Actionable proposals to Discord; the read-only cross-account digest is this
-# script's stdout, which Hermes delivers to Telegram.
+# Proposals to Discord. Nothing on stdout when that works, so Telegram stays silent.
 deliver_agentic
-[ -f "$DIGEST" ] && cat "$DIGEST"
 
 exit 0
