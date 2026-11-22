@@ -14,7 +14,11 @@ from the gitignored config/accounts.local.md; nothing here names one.
 
 The shape is the one docs/robinhood-orders-bridge.md in the Observatory defines:
 per account, positions, per-symbol lots, and the order history from
-`createdAtGte` with no symbol or state filter, paged to the end.
+`createdAtGte` with no symbol or state filter, paged to the end. Each account
+also carries `portfolio`, the raw `get_portfolio` answer, whose `cash` is the
+account's uninvested cash: the Observatory counts it in total assets, so a sale
+no longer reads as money leaving and a buy from that cash as money arriving.
+A reader of an older file finds no `portfolio` key and has no cash to count.
 
 A pull that looks wrong never replaces a good file. The new snapshot is refused,
 and the old one kept, when:
@@ -25,6 +29,7 @@ and the old one kept, when:
   * a symbol's lots do not add up to its position quantity (a lots page cut short
     looks answered; only the tally sees it)
   * an account that held positions in the previous snapshot now reads none
+  * an account's portfolio could not be read, or carries no numeric `cash`
 
 A stale file is reported by the Observatory's `robinhood_snapshot_fresh`; a wrong
 one is not reported by anything, so refusing is the safe side.
@@ -102,6 +107,12 @@ def pull(call: Call, numbers: dict[str, str], since: str, fetched_at: str) -> di
             lots.append({"symbol": sym, "lots": got})
         orders, orders_done = pages(call, "get_equity_orders",
                                     {"account_number": number, "created_at_gte": since}, "orders")
+        # Read last, so the cash already reflects every order listed above.
+        portfolio, portfolio_error = None, None
+        try:
+            portfolio = call("get_portfolio", {"account_number": number})["data"]
+        except Exception as e:  # noqa: BLE001 — a refusal, like a symbol's lots
+            portfolio_error = str(e)[:200]
         doc["accounts"].append({
             "accountNumber": number,
             "nickname": role,
@@ -110,8 +121,18 @@ def pull(call: Call, numbers: dict[str, str], since: str, fetched_at: str) -> di
             "lots": lots,
             "lotsUnavailable": unavailable,
             "orders": {"createdAtGte": since, "complete": orders_done, "items": orders},
+            "portfolio": portfolio,
+            **({"portfolioUnavailable": portfolio_error} if portfolio_error else {}),
         })
     return doc
+
+
+def cash_of(acct: dict[str, Any]) -> float | None:
+    """The account's uninvested cash from its `get_portfolio` answer, or None."""
+    try:
+        return float((acct.get("portfolio") or {})["cash"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def problems(new: dict[str, Any], old: dict[str, Any] | None, roles: list[str]) -> list[str]:
@@ -140,6 +161,10 @@ def problems(new: dict[str, Any], old: dict[str, Any] | None, roles: list[str]) 
             if abs(float(p["quantity"] or 0) - tally.get(sym, 0.0)) > TALLY_TOLERANCE:
                 out.append(f"{role}: {sym} lots add up to {tally.get(sym, 0.0):g}, "
                            f"position is {p['quantity']}")
+        if acct.get("portfolioUnavailable"):
+            out.append(f"{role}: portfolio unavailable ({acct['portfolioUnavailable']})")
+        elif cash_of(acct) is None:
+            out.append(f"{role}: portfolio has no numeric cash")
         before = old_by_role.get(role)
         if before and before.get("positions") and not acct["positions"]:
             out.append(f"{role}: no positions, previous snapshot had "
@@ -152,7 +177,7 @@ def summary(doc: dict[str, Any]) -> str:
     for a in doc["accounts"]:
         n_lots = sum(len(x["lots"]) for x in a["lots"])
         parts.append(f"{a['nickname']} {len(a['positions'])} positions/{n_lots} lots/"
-                     f"{len(a['orders']['items'])} orders")
+                     f"{len(a['orders']['items'])} orders/cash read")
     return "; ".join(parts)
 
 

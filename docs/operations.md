@@ -178,13 +178,15 @@ broker's id) and a `logs/trades/<date>.md` entry per order, confirmation
 ## Robinhood snapshot for the Observatory
 
 `scripts/robinhood_snapshot.py --out <observatory>/data/robinhood-snapshot.json` pulls
-positions, tax lots and order history for the three accounts in
+positions, tax lots, order history and each account's `get_portfolio` answer (its
+uninvested `cash`, which the Observatory counts in total assets) for the three accounts in
 `config/accounts.local.md` through `mcp-robinhood-proxy.py --read-only`, in the shape the
 Observatory's `docs/robinhood-orders-bridge.md` defines. The Observatory's holdings sheet
 tab, and so this repo's reconcile, are built from that file.
 
 It writes only a whole pull. Missing accounts, unfinished paging, unreadable lots, lots
-that do not add up to the position, or an account that suddenly holds nothing all refuse
+that do not add up to the position, a portfolio that could not be read or carries no
+numeric cash, or an account that suddenly holds nothing all refuse
 the pull and keep the previous file (exit 1); the reasons go to stdout. The previous file
 is kept beside the new one as `robinhood-snapshot.json.prev`. The order window
 (`createdAtGte`) is carried over from the previous snapshot unless `--created-at-gte` is

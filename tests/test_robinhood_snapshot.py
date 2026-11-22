@@ -23,8 +23,11 @@ ACCOUNTS_MD = ("| Placeholder | Number |\n|---|---|\n"
 class Broker:
     """Positions and lots per account number, answered the way the MCP pages them."""
 
-    def __init__(self, book, lot_page=None, fail_lots=(), orders_never_end=False):
+    def __init__(self, book, lot_page=None, fail_lots=(), orders_never_end=False,
+                 portfolio=None, fail_portfolio=False):
         self.book = book
+        self.portfolio = portfolio
+        self.fail_portfolio = fail_portfolio
         self.lot_page = lot_page
         self.fail_lots = set(fail_lots)
         self.orders_never_end = orders_never_end
@@ -51,6 +54,12 @@ class Broker:
             if self.orders_never_end:
                 return {"data": {"orders": [], "next": "more"}}
             return {"data": {"orders": [{"id": "o1"}], "next": None}}
+        if tool == "get_portfolio":
+            if self.fail_portfolio:
+                raise RuntimeError("timed out")
+            if self.portfolio is not None:
+                return {"data": self.portfolio}
+            return {"data": {"cash": "12.34", "currency": "USD", "total_value": "99.00"}}
         raise AssertionError(tool)
 
 
@@ -83,6 +92,9 @@ def test_a_whole_pull_is_written_in_the_bridge_shape(tmp_path, capsys):
     assert set(mid["positions"][0]) == set(rs.POSITION_FIELDS)
     assert mid["orders"] == {"createdAtGte": "2026-07-31", "complete": True,
                              "items": [{"id": "o1"}]}
+    # The raw get_portfolio answer, whose cash the Observatory counts.
+    assert mid["portfolio"] == {"cash": "12.34", "currency": "USD", "total_value": "99.00"}
+    assert "portfolioUnavailable" not in mid
     # The previous file is kept beside it, and the new one is private.
     prev = json.loads((tmp_path / "robinhood-snapshot.json.prev").read_text())
     assert prev["fetchedAt"] == "old"
@@ -133,6 +145,34 @@ def test_an_account_that_suddenly_holds_nothing_is_refused(tmp_path, capsys):
     book = dict(BOOK, **{"222": {}})
     text = refused(tmp_path, Broker(book), capsys)
     assert "Long-term: no positions, previous snapshot had 1" in text
+
+
+def test_cash_is_read_after_the_orders_of_each_account(tmp_path):
+    out = tmp_path / "robinhood-snapshot.json"
+    seed(out)
+    broker = Broker(BOOK)
+    run(tmp_path, broker)
+    for number in ("111", "222", "333"):
+        tools = [t for t, a in broker.calls if a.get("account_number") == number]
+        assert tools.index("get_portfolio") > tools.index("get_equity_orders")
+
+
+def test_a_portfolio_that_failed_is_refused(tmp_path, capsys):
+    text = refused(tmp_path, Broker(BOOK, fail_portfolio=True), capsys)
+    assert "Mid-term: portfolio unavailable (timed out)" in text
+
+
+def test_a_portfolio_without_numeric_cash_is_refused(tmp_path, capsys):
+    text = refused(tmp_path, Broker(BOOK, portfolio={"cash": None, "currency": "USD"}), capsys)
+    assert "Long-term: portfolio has no numeric cash" in text
+
+
+def test_a_negative_margin_balance_is_cash_not_a_refusal(tmp_path):
+    out = tmp_path / "robinhood-snapshot.json"
+    seed(out)
+    rc, _ = run(tmp_path, Broker(BOOK, portfolio={"cash": "-50.00", "currency": "USD"}))
+    assert rc == 0
+    assert rs.cash_of(json.loads(out.read_text())["accounts"][0]) == -50.0
 
 
 def test_check_mode_writes_nothing(tmp_path):
