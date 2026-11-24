@@ -300,6 +300,47 @@ def test_a_wash_sale_window_a_stop_loss_would_open_reads_as_one_line():
         "Blocked (wash-sale buy block): **AAPL** — loss sale 2026-11-02."]
 
 
+def test_one_rule_is_one_line_whatever_its_spelling_or_extra_figures():
+    # The same block as worded on 11-18, 11-20 and 11-23.
+    blocked = [
+        {"symbol": "NVDA", "rule": "Committed-add capital cap",
+         "value": "32.10% drawdown, committed $200.00 of $200, proposed $100 add would bring "
+                  "committed capital to $300.00"},
+        {"symbol": "GOOGL", "rule": "Committed-add cap",
+         "value": "committed $200.00 of $200; $300.00 after proposed $100 add"},
+        {"symbol": "MSFT", "rule": "Committed-add cap",
+         "value": "committed $200.00 of $200 · $300.00 after proposed $100 add · 11.84% drawdown"},
+        {"symbol": "VOO", "rule": "One add per symbol per calendar week",
+         "value": "committed $100.00 of $200; filled 2026-11-18 ($100.00)"},
+    ]
+    assert dl.blocked_lines(blocked, []) == [
+        "Blocked (committed-add cap): **NVDA**, **GOOGL**, **MSFT** — "
+        "each committed $200.00 of $200.",
+        "Blocked (one add per symbol per calendar week): **VOO** — committed $100.00 of $200.",
+    ]
+
+
+def test_a_proposed_stop_loss_always_carries_its_wash_sale_hold():
+    # 11-20 and 11-23 had GOOGL and NVDA stop-losses standing and no wash-sale block
+    # in the record; 11-19 had the same two with one. The line must not depend on that.
+    decisions = [{"side": "sell", "symbol": "NVDA", "kind": "stop-loss"},
+                 {"side": "sell", "symbol": "GOOGL", "kind": "stop-loss"},
+                 {"side": "sell", "symbol": "MSFT", "kind": "take-profit"}]
+    assert dl.blocked_lines([], decisions, "2026-11-24") == [
+        "Wash-sale hold if the stop-loss sells at a loss: **NVDA**, **GOOGL** — "
+        "no buys until Dec 25, 2026."]
+    # A date the review also wrote for the same symbol is replaced, not repeated.
+    stale = [{"symbol": "NVDA", "rule": "proposed stop-loss starts wash-sale buy block",
+              "value": "If filled 2026-11-20 at the price used, loss sale blocks buys through "
+                       "2026-12-20; clears 2026-12-21"}]
+    assert dl.blocked_lines(stale, decisions, "2026-11-24") == [
+        "Wash-sale hold if the stop-loss sells at a loss: **NVDA**, **GOOGL** — "
+        "no buys until Dec 25, 2026."]
+    # 11-19's record: the computed date matches what the review wrote.
+    assert dl.blocked_lines(stale, decisions[:1], "2026-11-20") == [
+        "Wash-sale hold if the stop-loss sells at a loss: **NVDA** — no buys until Dec 21, 2026."]
+
+
 def test_a_position_moved_between_accounts_is_one_entry():
     # 2026-11-05: QLD left Mid-term and arrived whole in Long-term.
     recon = {"alerts": [
