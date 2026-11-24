@@ -182,6 +182,14 @@ rather than in the runtime. The job is created **paused** — installing is not 
 > The model is the trader Hermes profile's primary (`scripts/trader_model.py`); set
 > `TRADER_MODEL` to override it for one run.
 
+> **codex version.** The cron wrapper runs a pinned codex CLI ahead of the one on
+> PATH, from `~/.local/share/codex-trader-review-cli/<version>/node_modules/.bin`,
+> when that install exists (default version in `scripts/hermes/trading-review-cron.sh`).
+> To move it, install the new version beside the old one
+> (`npm install --prefix ~/.local/share/codex-trader-review-cli/<version> @openai/codex@<version>`)
+> and set `TRADER_REVIEW_CODEX_VERSION` in the trader profile `.env`. A newer
+> model generation can need a newer CLI than the host-wide one.
+
 ```bash
 FORCE=1 bash scripts/run-review.sh    # run once now, bypassing the market-day guard
 cat logs/cron/$(date +%F).run.log     # what it did

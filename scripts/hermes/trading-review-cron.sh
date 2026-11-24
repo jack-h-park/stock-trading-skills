@@ -33,6 +33,25 @@ done
 export PATH="$PATH:/usr/bin:/bin"
 unset _d
 
+# Pin the codex CLI this review runs, scoped to this cron runner. run-review.sh
+# takes codex from PATH, and the host-wide one (Homebrew) moves on its own
+# schedule. When the trader model moved to a newer generation on 2026-11-18, the
+# review needed a newer codex than Homebrew had, so a private install was put
+# first on PATH — by hand, in the deployed copy of this file only. Copying the
+# repo version over it would have dropped the pin without a word, and the next
+# review would have run the older CLI against a model it may not serve.
+#
+# The pinned install is used only when it exists, so a host without one keeps
+# the PATH codex. To move the pin, install the new version beside the old one
+# and set TRADER_REVIEW_CODEX_VERSION in the trader profile .env.
+_pin="$HOME/.local/share/codex-trader-review-cli/${TRADER_REVIEW_CODEX_VERSION:-0.169.1}/node_modules/.bin"
+if [ -x "$_pin/codex" ]; then
+  PATH="$_pin:$PATH"
+elif [ -n "${TRADER_REVIEW_CODEX_VERSION:-}" ]; then
+  echo "trading-review: TRADER_REVIEW_CODEX_VERSION=$TRADER_REVIEW_CODEX_VERSION has no codex at $_pin; using $(command -v codex || echo 'no codex on PATH')" >&2
+fi
+unset _pin
+
 # $REPO comes from the profile .env, which outranks the default above. When the
 # checkout is renamed or moved and that value is not updated with it, every path
 # built from it points at nothing. Check the directory itself, not just the
