@@ -224,7 +224,7 @@ def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
     if not out:
         out.append("No proposals today.")
 
-    out += blocked_lines(rec.get("blocked") or [], decisions)
+    out += blocked_lines(rec.get("blocked") or [], decisions, rec.get("targetSession"))
     none = [name for name, present in (("TRIM", trims), ("stop-loss",
             [d for d in exits if d["kind"] == "stop-loss"])) if not present]
     if none:
@@ -232,11 +232,43 @@ def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
     return out
 
 
-def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]) -> list[str]:
+# A stop-loss filled on the target session opens a 30-day wash-sale window: buys are
+# blocked for 30 days and resume on day 31 (config/guardrails.md § Wash-sale window).
+WASH_CLEAR_DAYS = 31
+_AMOUNT = r"\$\d+(?:,\d{3})*(?:\.\d+)?"  # not [\d,]+: "$200," on 11-18 ended a clause
+COMMITTED = re.compile(rf"committed {_AMOUNT} of {_AMOUNT}")
+
+
+def rule_label(rule: str) -> str:
+    """The rule name as one spelling, so one rule makes one line.
+
+    The review writes the same rule differently from day to day: 'committed-add cap'
+    on 11-19, 'Committed-add cap' on 11-20, 'Committed-add capital cap' on 11-18. Each
+    spelling used to be its own group.
+    """
+    label = " ".join(rule.split()).lower()
+    return label.replace("committed-add capital cap", "committed-add cap")
+
+
+def block_figure(value: str) -> str:
+    """The number behind a block: 'committed $X of $Y' wherever the value states it.
+
+    Otherwise the value up to its first ';' or '·'. What follows is the model restating
+    the arithmetic, worded differently daily: on 11-23 each value also carried the
+    symbol's drawdown after a '·', which made every symbol its own line.
+    """
+    m = COMMITTED.search(value)
+    if m:
+        return m.group(0)
+    return re.split(r"\s*[;·]\s*", value, maxsplit=1)[0].strip()
+
+
+def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]],
+                  target_session: str | None = None) -> list[str]:
     """One line per (rule, figure), naming every symbol it blocked and the number behind it.
 
-    The figure is the record's value up to its first ';' — 'committed $200.00 of $200' —
-    because what follows is the model restating the arithmetic, worded differently daily.
+    The rule is normalised by rule_label and the figure taken by block_figure, so the
+    grouping does not depend on how the review happened to word either.
 
     REDISTRIBUTE candidates are the exception: the review names their rule in free text
     ('REDISTRIBUTE one direction per review', 'redistribute: one symbol, one direction;
@@ -248,7 +280,9 @@ def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]
     A wash-sale window that a proposed loss sale WOULD open is the other exception. The
     review words it as a sentence ('If sold 2026-11-11 at a loss, buy block through
     2026-12-11'), which read as "each If sold ..." in the generic form. Those share one
-    line per clearing date.
+    line per clearing date. The window a proposed stop-loss opens is also computed here
+    from the decision record, because the review wrote it on 11-19 and not on 11-20 or
+    11-23, with the same two stop-losses standing all three days.
     """
     sell_kind = {d.get("symbol"): d.get("kind") for d in decisions if d.get("side") == "sell"}
     groups: dict[tuple[str, str], list[str]] = {}
@@ -256,7 +290,7 @@ def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]
     wash: dict[str, list[str]] = {}
     for b in blocked:
         raw = str(b.get("value") or "n/a")
-        figure = raw.split(";")[0].strip()
+        figure = block_figure(raw)
         rule = str(b.get("rule") or "blocked")
         if "redistribute" in rule.lower():
             kind = sell_kind.get(b["symbol"])
@@ -268,7 +302,20 @@ def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]
         if clears:
             wash.setdefault(clears, []).append(b["symbol"])
             continue
-        groups.setdefault((rule, figure), []).append(b["symbol"])
+        groups.setdefault((rule_label(rule), block_figure(raw)), []).append(b["symbol"])
+    if target_session:
+        clears = (dt.date.fromisoformat(target_session)
+                  + dt.timedelta(days=WASH_CLEAR_DAYS)).isoformat()
+        for d in decisions:
+            if d.get("kind") != "stop-loss" or not d.get("symbol"):
+                continue
+            # Computed from the record, so it replaces whatever date the review wrote
+            # for the same symbol rather than listing the symbol twice.
+            for symbols in wash.values():
+                if d["symbol"] in symbols:
+                    symbols.remove(d["symbol"])
+            wash.setdefault(clears, []).append(d["symbol"])
+        wash = {k: v for k, v in wash.items() if v}
     out = []
     for (rule, figure), symbols in groups.items():
         names = ", ".join(f"**{s}**" for s in symbols)
