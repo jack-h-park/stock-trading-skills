@@ -65,7 +65,7 @@ unset _pin
 # and the Telegram message said the market was closed on an ordinary Wednesday.
 # Alert on stdout and exit nonzero — see "Exit codes" below.
 if [ ! -d "$REPO" ]; then
-  echo "⚠️ trading-review $DATE_ISO: configured repo does not exist at $REPO — review did not run. Set TRADING_AGENT_REPO in the trader profile .env to the current checkout path."
+  echo "⚠️ trading-review $DATE_ISO: 설정된 저장소 경로 $REPO 가 없어 리뷰를 실행하지 않았습니다. trader profile .env의 TRADING_AGENT_REPO를 현재 checkout 경로로 고쳐 주세요."
   exit 1
 fi
 
@@ -85,7 +85,7 @@ python3 "$REPO/scripts/hermes/market-check.py" 2>"$MARKET_CHECK_ERR"
 MARKET_CHECK_RC=$?
 if [ "$MARKET_CHECK_RC" -ne 0 ]; then
   if [ -s "$MARKET_CHECK_ERR" ]; then
-    echo "⚠️ ${DATE_ISO}: market-check.py errored (rc=$MARKET_CHECK_RC) instead of a clean trading-day answer — running the review anyway. $(head -c 300 "$MARKET_CHECK_ERR" | tr '\n' ' ')"
+    echo "⚠️ ${DATE_ISO}: market-check.py가 개장일 판단 대신 오류를 냈습니다(rc=$MARKET_CHECK_RC). 리뷰는 그대로 실행합니다. $(head -c 300 "$MARKET_CHECK_ERR" | tr '\n' ' ')"
   else
     rm -f "$MARKET_CHECK_ERR"
     echo "📅 ${DATE_ISO} 주식 개장일이 아니어서 오늘 trading review는 진행하지 않았습니다."
@@ -94,7 +94,7 @@ if [ "$MARKET_CHECK_RC" -ne 0 ]; then
 fi
 rm -f "$MARKET_CHECK_ERR"
 
-[ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: runner not found at $RUNNER — review did not run."; exit 1; }
+[ -f "$RUNNER" ] || { echo "⚠️ trading-review $DATE_ISO: 실행 스크립트 $RUNNER 가 없어 리뷰를 실행하지 않았습니다."; exit 1; }
 
 # Run the review+reconcile. It self-logs to logs/cron/<date>.run.log and emits no
 # stdout of its own; on weekends it skips and writes no digest. Its stderr goes to
@@ -157,7 +157,7 @@ deliver_agentic() {
       return 0
     fi
     # A failed send must not swallow the proposals — fall through to stdout.
-    echo "⚠️ Agentic proposals could not be sent to Discord; delivering here instead."
+    echo "⚠️ Agentic 제안을 Discord로 보내지 못해 여기로 대신 보냅니다."
   fi
   cat "$AGENTIC"
 }
@@ -172,11 +172,11 @@ deliver_agentic() {
 # pushed the one fact that mattered off a phone screen.
 if [ "$RC" -ne 0 ]; then
   FAILED="$(awk '
-    BEGIN { split("A=signals B=reconcile C=overview D=digest P=preflight", p, " ")
+    BEGIN { split("A=신호 B=시트대조 C=개요 D=digest P=사전점검", p, " ")
             for (i in p) { split(p[i], kv, "="); name[kv[1]] = kv[2] } }
     NF >= 2 && $2 != "0" {
       lbl = ($1 in name) ? name[$1] : $1
-      why = $0; sub(/^[^ ]+ [^ ]+ ?/, "", why); if (why == "") why = "failed without a message"
+      why = $0; sub(/^[^ ]+ [^ ]+ ?/, "", why); if (why == "") why = "메시지 없이 실패"
       if (!(why in seen)) { order[++n] = why; seen[why] = lbl } else seen[why] = seen[why] "+" lbl
     }
     END { for (i = 1; i <= n; i++) printf "%s%s — %s", (i > 1 ? "; " : ""), seen[order[i]], order[i] }
@@ -189,18 +189,18 @@ if [ "$RC" -ne 0 ]; then
     LAST_ERR="$(awk '/^===== run-review start/ { line = "" }
                      /ERROR|unbound variable|command not found|syntax error|No such file/ { line = $0 }
                      END { print line }' "$RUNLOG" 2>/dev/null | cut -c1-300)"
-    FAILED="${LAST_ERR:-no error line in logs/cron/${DATE_ISO}.run.log}"
+    FAILED="${LAST_ERR:-logs/cron/${DATE_ISO}.run.log에 오류 줄이 없음}"
   fi
 
   # A partial failure still leaves real work on disk. Suppressing the digest
   # because one phase died threw away the proposals the surviving phases had
   # already produced and paid for, so lead with the warning and deliver anyway.
   if [ -f "$AGENTIC" ]; then
-    echo "⚠️ trading-review PARTIAL $DATE_ISO — ${FAILED}"
-    echo "The Agentic message is built from the phases that did finish and goes to Discord (or follows here if Discord cannot take it); anything owned by a failed phase is missing from it."
+    echo "⚠️ trading-review 일부만 완료 $DATE_ISO — ${FAILED}"
+    echo "Agentic 메시지는 끝난 단계만으로 만들어 Discord로 보냅니다(Discord가 받지 못하면 아래에 이어집니다). 실패한 단계가 맡은 내용은 빠져 있습니다."
     deliver_agentic
   else
-    echo "⚠️ trading-review FAILED $DATE_ISO (rc=$RC) — ${FAILED}"
+    echo "⚠️ trading-review 실패 $DATE_ISO (rc=$RC) — ${FAILED}"
   fi
   exit 1
 fi

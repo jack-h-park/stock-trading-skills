@@ -58,7 +58,13 @@ SLEEVE = re.compile(
 
 ACCOUNT_ORDER = ["Long-term", "Mid-term"]
 EXIT_KINDS = ("take-profit", "stop-loss")
-CLOSER = "Proposals only; nothing executes until Jack confirms in the interactive session."
+CLOSER = "제안일 뿐입니다. Jack이 대화 세션에서 확인하기 전에는 아무것도 실행되지 않습니다."
+WEEKDAYS = ("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일")
+# How a kind or a reading side is named in the message. The record keeps the English
+# value, which scheduled_orders.py and the tests read.
+KIND_KO = {"buy": "매수", "redistribute": "재배분", "trim": "일부 매도",
+           "take-profit": "익절", "stop-loss": "손절"}
+SIDE_KO = {"buy": "매수", "exit": "매도", "sell": "매도"}
 
 
 def _load(path: Path) -> Any:
@@ -99,12 +105,12 @@ def signed(value: Decimal, unit: str = "") -> str:
 
 def long_date(iso: str) -> str:
     d = dt.date.fromisoformat(iso)
-    return f"{d:%b} {d.day}, {d.year}"
+    return f"{d.year}년 {d.month}월 {d.day}일"
 
 
 def short_date(iso: str) -> str:
     d = dt.date.fromisoformat(iso)
-    return f"{d:%b} {d.day}"
+    return f"{d.month}월 {d.day}일"
 
 
 def sentence(text: object) -> str:
@@ -113,8 +119,12 @@ def sentence(text: object) -> str:
     return t if t.endswith(("?", "!")) else f"{t}."
 
 
+def shares(value: float | Decimal | str) -> str:
+    return f"{qty(value)}주"
+
+
 def sleeve_line(review: str) -> str | None:
-    """'Sleeve **$X**, day ±$Y (±Z%)' from the review's LAST 'Sleeve:' line.
+    """'Agentic 계좌 **$X**, 당일 ±$Y (±Z%)' from the review's LAST 'Sleeve:' line.
 
     The last one, because a manual run earlier the same day appends its own section
     computed on prices that were not the close.
@@ -127,7 +137,7 @@ def sleeve_line(review: str) -> str | None:
     psign = "−" if m["psign"] in ("-", "−") else "+"
     value = money(m["value"].replace(",", ""))
     change = money(m["change"].replace(",", ""))
-    return f"Sleeve **{value}**, day {dsign}{change} ({psign}{m['pct']}%)"
+    return f"Agentic 계좌 **{value}**, 당일 {dsign}{change} ({psign}{m['pct']}%)"
 
 
 def slots_clause(target: str | None, tax: dict[str, Any] | None) -> str:
@@ -137,12 +147,12 @@ def slots_clause(target: str | None, tax: dict[str, Any] | None) -> str:
     REDISTRIBUTE included — in the last 30 days; the week runs Monday to Sunday.
     """
     if not target:
-        return "slots unavailable (no target session in the decision record)"
+        return "주문 여유 알 수 없음(결정 기록에 실행 세션이 없음)"
     day = dt.date.fromisoformat(target)
-    weekday = f"{day:%A}"
+    weekday = WEEKDAYS[day.weekday()]
     # A tax file whose Robinhood half failed carries no recentBuys at all: unknown, not zero.
     if tax is None or "recentBuys" not in tax:
-        return f"slots for {weekday} unavailable (no fill data today)"
+        return f"{weekday} 주문 여유 알 수 없음(오늘 체결 데이터 없음)"
     monday = day - dt.timedelta(days=day.weekday())
     week = today = 0
     for buys in (tax.get("recentBuys") or {}).values():
@@ -156,17 +166,17 @@ def slots_clause(target: str | None, tax: dict[str, Any] | None) -> str:
                 today += 1
     left_today = max(0, min(DAILY_ORDER_CAP - today, WEEKLY_ORDER_CAP - week))
     left_week = max(0, WEEKLY_ORDER_CAP - week)
-    return (f"slots for {weekday}: {left_today} of {DAILY_ORDER_CAP} today, "
-            f"{left_week} of {WEEKLY_ORDER_CAP} that week")
+    return (f"{weekday} 주문 여유: 당일 {left_today}/{DAILY_ORDER_CAP}건, "
+            f"그 주 {left_week}/{WEEKLY_ORDER_CAP}건")
 
 
 def standing_text(entry: dict[str, Any] | None) -> str:
     if not entry or entry.get("sessions", 1) <= 1:
-        return "new"
+        return "신규"
     since = short_date(entry["since"])
     if entry.get("atLeast"):
-        return f"standing since at least {since}, {entry['sessions']}+ sessions"
-    return f"standing since {since}, {entry['sessions']} sessions"
+        return f"최소 {since}부터 {entry['sessions']}회 이상 연속"
+    return f"{since}부터 {entry['sessions']}회 연속"
 
 
 def term_text(lot: dict[str, Any] | None) -> str | None:
@@ -174,22 +184,22 @@ def term_text(lot: dict[str, Any] | None) -> str | None:
         return None
     term = lot.get("term")
     if term == "short-term" and lot.get("oldestLongTermFrom"):
-        text = f"short-term until {long_date(lot['oldestLongTermFrom'])}"
+        text = f"{long_date(lot['oldestLongTermFrom'])} 전까지 단기 보유"
     elif term == "long-term":
-        text = "long-term"
+        text = "장기 보유"
     elif term == "mixed":
-        text = "mixed lots"
+        text = "단기·장기 lot 혼재"
     else:
         return None
     if lot.get("turnsLongTermSoon"):
-        text += f"; oldest lot turns long-term in {lot.get('daysToLongTerm')} days"
+        text += f"; 가장 오래된 lot은 {lot.get('daysToLongTerm')}일 뒤 장기 전환"
     return text
 
 
 def drawdown(signals: dict[str, Any] | None, symbol: str) -> str:
     sym = ((signals or {}).get("symbols") or {}).get(symbol) or {}
     pct = sym.get("drawdownPct")
-    return f"{pct:.2f}% below 20d high" if isinstance(pct, (int, float)) else "drawdown n/a"
+    return f"20일 고점 대비 −{pct:.2f}%" if isinstance(pct, (int, float)) else "하락폭 없음"
 
 
 def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
@@ -208,27 +218,28 @@ def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
 
     out: list[str] = []
     for d in buys:
-        out.append(f"• BUY {dollars(d['notional'])} **{d['symbol']}** — "
+        out.append(f"• 매수 {dollars(d['notional'])} **{d['symbol']}** — "
                    f"{drawdown(signals, d['symbol'])}; {stood(d)}")
     for d in trims:
         dest = ", ".join(f"**{r['symbol']}** {dollars(r['notional'])}" for r in redistribute)
-        tail = f"REDISTRIBUTE → {dest}" if dest else "proceeds held as cash"
-        out.append(f"• TRIM **{d['symbol']}** **{qty(d['shares'])}sh** (~{money(d['notional'])})"
-                   f" — {drawdown(signals, d['symbol'])}; {stood(d)}; {tail}")
+        tail = f"재배분 → {dest}" if dest else "매도 대금은 현금으로 보유"
+        out.append(f"• 일부 매도 **{d['symbol']}** **{shares(d['shares'])}** "
+                   f"(~{money(d['notional'])}) — {drawdown(signals, d['symbol'])}; "
+                   f"{stood(d)}; {tail}")
     for d in exits:
-        label = "Take-profit" if d["kind"] == "take-profit" else "Stop-loss"
-        line = (f"• {label} **{d['symbol']}** **{qty(d['shares'])}sh** (~{money(d['notional'])})"
-                f" — {stood(d)}")
+        label = KIND_KO[d["kind"]]
+        line = (f"• {label} **{d['symbol']}** **{shares(d['shares'])}** "
+                f"(~{money(d['notional'])}) — {stood(d)}")
         term = term_text(lots.get(d["symbol"]))
         out.append(f"{line}; {term}" if term else line)
     if not out:
-        out.append("No proposals today.")
+        out.append("오늘 제안 없음.")
 
     out += blocked_lines(rec.get("blocked") or [], decisions, rec.get("targetSession"))
-    none = [name for name, present in (("TRIM", trims), ("stop-loss",
+    none = [name for name, present in (("일부 매도", trims), ("손절",
             [d for d in exits if d["kind"] == "stop-loss"])) if not present]
     if none:
-        out.append("No " + " or ".join(none) + " today.")
+        out.append("오늘 " + "·".join(none) + " 없음.")
     return out
 
 
@@ -236,7 +247,22 @@ def proposal_lines(rec: dict[str, Any], signals: dict[str, Any] | None,
 # blocked for 30 days and resume on day 31 (config/guardrails.md § Wash-sale window).
 WASH_CLEAR_DAYS = 31
 _AMOUNT = r"\$\d+(?:,\d{3})*(?:\.\d+)?"  # not [\d,]+: "$200," on 11-18 ended a clause
-COMMITTED = re.compile(rf"committed {_AMOUNT} of {_AMOUNT}")
+COMMITTED = re.compile(rf"committed ({_AMOUNT}) of ({_AMOUNT})")
+
+# The review names rules in English, and scheduled_orders.py reads them that way; the
+# message names the ones it knows in Korean and shows any other as the review wrote it.
+RULE_KO = {
+    "committed-add cap": "추가 매수 한도",
+    "one add per symbol per calendar week": "종목당 주 1회 추가 매수",
+    "one add per symbol per week": "종목당 주 1회 추가 매수",
+    "20% position cap": "종목 비중 20% 한도",
+    "position cap": "종목 비중 한도",
+    "daily order cap": "일일 주문 한도",
+    "weekly order cap": "주간 주문 한도",
+    "wash-sale window": "wash-sale 기간",
+    "wash-sale block": "wash-sale 기간",
+    "wash-sale buy block": "wash-sale 기간",
+}
 
 
 def rule_label(rule: str) -> str:
@@ -248,6 +274,19 @@ def rule_label(rule: str) -> str:
     """
     label = " ".join(rule.split()).lower()
     return label.replace("committed-add capital cap", "committed-add cap")
+
+
+def rule_ko(label: str) -> str:
+    return RULE_KO.get(label, label)
+
+
+def figure_ko(figure: str) -> str:
+    """'committed $X of $Y' as Korean; any other figure as the review wrote it.
+
+    The review keeps that one phrase in English because block_figure reads it.
+    """
+    m = COMMITTED.fullmatch(figure)
+    return f"약정 {m.group(1)} / 한도 {m.group(2)}" if m else figure
 
 
 def block_figure(value: str) -> str:
@@ -294,8 +333,8 @@ def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]
         rule = str(b.get("rule") or "blocked")
         if "redistribute" in rule.lower():
             kind = sell_kind.get(b["symbol"])
-            why = figure if kind is None else ("trim proposed" if kind == "trim"
-                                               else "exit proposed")
+            why = figure_ko(figure) if kind is None else (
+                "일부 매도 제안" if kind == "trim" else "매도 제안")
             no_recipient.append(f"**{b['symbol']}** ({why})")
             continue
         clears = conditional_wash_clear(rule, raw)
@@ -319,14 +358,14 @@ def blocked_lines(blocked: list[dict[str, Any]], decisions: list[dict[str, Any]]
     out = []
     for (rule, figure), symbols in groups.items():
         names = ", ".join(f"**{s}**" for s in symbols)
-        each = "each " if len(symbols) > 1 else ""
-        out.append(f"Blocked ({rule}): {names} — {each}{figure}.")
+        each = "각각 " if len(symbols) > 1 else ""
+        out.append(f"보류({rule_ko(rule)}): {names} — {each}{figure_ko(figure)}.")
     if no_recipient:
-        out.append("No REDISTRIBUTE recipient: " + ", ".join(no_recipient) + ".")
+        out.append("재배분 대상 없음: " + ", ".join(no_recipient) + ".")
     for clears, symbols in wash.items():
         names = ", ".join(f"**{s}**" for s in symbols)
-        out.append(f"Wash-sale hold if the stop-loss sells at a loss: {names} — "
-                   f"no buys until {long_date(clears)}.")
+        out.append(f"손절이 손실로 체결되면 wash-sale 보류: {names} — "
+                   f"{long_date(clears)}부터 매수 재개.")
     return out
 
 
@@ -354,12 +393,13 @@ def decision_section(rec: dict[str, Any]) -> list[str]:
     reqs = rec.get("decisionRequests") or []
     if not reqs:
         return []
-    out = ["Decision needed:"]
+    out = ["결정 필요:"]
     for r in reqs:
-        readings = "; ".join(f"{x.get('side')}: {x.get('detail')}" for x in r.get("readings") or [])
+        readings = "; ".join(f"{SIDE_KO.get(str(x.get('side')), x.get('side'))}: {x.get('detail')}"
+                             for x in r.get("readings") or [])
         out.append(f"• **{r['symbol']}** — {sentence(r.get('question'))} {sentence(readings)}")
-    out.append("Nothing on these symbols executes either way until Jack rules; "
-               "the answer is recorded and not asked again.")
+    out.append("Jack이 정하기 전에는 어느 쪽이든 이 종목은 실행되지 않습니다. "
+               "답은 기록되고 다시 묻지 않습니다.")
     return out
 
 
@@ -377,59 +417,59 @@ def departure_section(rec: dict[str, Any]) -> list[str]:
     for d in deps:
         key = tuple(sentence(d.get(k)).lower() for k in ("threshold", "did", "why"))
         groups.setdefault(key, []).append(d)  # type: ignore[arg-type]
-    out = ["Read past a threshold:"]
+    out = ["기준을 넘어 판단한 항목:"]
     for members in groups.values():
         first = members[0]
         names = ", ".join(f"**{d['symbol']}** ({str(d.get('observed') or 'n/a').rstrip('.')})"
                           for d in members)
         out.append(f"• {names} — {sentence(first.get('threshold'))} "
-                   f"Did: {sentence(first.get('did'))} Why: {sentence(first.get('why'))}")
-    out.append("Not auto-eligible; Jack confirms either way.")
+                   f"조치: {sentence(first.get('did'))} 이유: {sentence(first.get('why'))}")
+    out.append("자동 실행 대상이 아닙니다. 어느 쪽이든 Jack이 확인합니다.")
     return out
 
 
 def avg_text(value: Any) -> str:
     # Robinhood omits the average cost on some positions (transferred-in lots,
     # long-held ones); the record carries null, and 'n/a' is the honest rendering.
-    return "avg n/a" if value is None else money(value)
+    return "평단 없음" if value is None else money(value)
 
 
 def reconcile_entry(a: dict[str, Any]) -> str:
     sym, kind = a["symbol"], a.get("kind", "drift")
     if kind == "add":
-        return f"add {sym} {qty(a['liveQty'])} @ {avg_text(a.get('liveAvg'))}"
+        return f"추가 {sym} {shares(a['liveQty'])} @ {avg_text(a.get('liveAvg'))}"
     if kind == "remove":
-        return f"remove {sym} (−{qty(a['sheetQty'])} sh)"
+        return f"삭제 {sym} (−{shares(a['sheetQty'])})"
     delta = Decimal(str(a["liveQty"])) - Decimal(str(a["sheetQty"]))
-    shares = signed(Decimal(qty(abs(delta))) * (1 if delta >= 0 else -1)) + " sh"
+    moved = signed(Decimal(qty(abs(delta))) * (1 if delta >= 0 else -1)) + "주"
     if kind == "verify":
-        return f"verify {sym} {qty(a['liveQty'])} ({shares})"
-    text = f"{sym} → {qty(a['liveQty'])} @ {avg_text(a.get('liveAvg'))} ({shares}"
+        return f"확인 {sym} {shares(a['liveQty'])} ({moved})"
+    text = f"{sym} → {shares(a['liveQty'])} @ {avg_text(a.get('liveAvg'))} ({moved}"
     if a.get("liveAvg") is not None and a.get("sheetAvg") is not None:
         avg = (Decimal(str(a["liveAvg"])) - Decimal(str(a["sheetAvg"]))).quantize(Decimal("0.01"))
         if avg != 0:
-            text += f", avg {signed(avg, '$')}"
+            text += f", 평단 {signed(avg, '$')}"
     return text + ")"
 
 
 def reconcile_section(recon: dict[str, Any] | None, recon_md: bool) -> list[str]:
     if recon is None:
         if recon_md:
-            return ["Reconcile: structured result missing today; read logs/reconcile/ directly."]
-        return ["Reconcile: did not run today."]
+            return ["시트 대조: 오늘 구조화된 결과가 없습니다. logs/reconcile/을 직접 보세요."]
+        return ["시트 대조: 오늘 실행되지 않았습니다."]
     alerts = recon.get("alerts") or []
     if not alerts:
         return []
     moves, rest = pair_transfers(alerts)
     by_account: dict[str, list[str]] = {}
     for a in sorted(rest, key=lambda a: a["symbol"]):
-        by_account.setdefault(a.get("account", "Unknown"), []).append(reconcile_entry(a))
+        by_account.setdefault(a.get("account", "계좌 미상"), []).append(reconcile_entry(a))
     order = ACCOUNT_ORDER + sorted(k for k in by_account if k not in ACCOUNT_ORDER)
-    out = ["Reconcile:",
-           "Outside Agentic. The sheet follows the Observatory's Robinhood snapshot: "
-           "refresh it rather than edit rows."]
+    out = ["시트 대조:",
+           "Agentic 밖의 계좌입니다. 시트는 Observatory의 Robinhood 스냅샷을 따르므로 "
+           "행을 고치지 말고 스냅샷을 새로 고치세요."]
     if moves:
-        out.append("Moved between accounts: " + "; ".join(moves) + ".")
+        out.append("계좌 간 이동: " + "; ".join(moves) + ".")
     out += [f"{acct}: " + "; ".join(by_account[acct]) + "." for acct in order if acct in by_account]
     return out
 
@@ -453,7 +493,7 @@ def pair_transfers(alerts: list[dict[str, Any]]) -> tuple[list[str], list[dict[s
                           and Decimal(str(r["sheetQty"])) == Decimal(str(a["liveQty"]))), None)
             if match is not None:
                 used.add(id(match))
-                moves.append(f"{a['symbol']} {qty(a['liveQty'])} sh "
+                moves.append(f"{a['symbol']} {shares(a['liveQty'])} "
                              f"{match.get('account')} → {a.get('account')}")
                 continue
         rest.append(a)
@@ -464,12 +504,13 @@ def unlogged_section(recon: dict[str, Any] | None) -> list[str]:
     findings = ((recon or {}).get("tradeLog") or {}).get("findings") or []
     if not findings:
         return []
-    out = ["Unlogged trades:"]
+    out = ["기록되지 않은 거래:"]
     for f in findings:
-        out.append(f"• {short_date(f['date'])} {str(f.get('side', '')).upper()} **{f['symbol']}** "
-                   f"{qty(f['shares'])}sh @ {money(f['price'])}")
-    out.append("Write each missing entry in logs/trades/ per skills/log/SKILL.md, reconstructing "
-               "why the order was placed; nothing to place or cancel.")
+        side = str(f.get("side", "")).lower()
+        out.append(f"• {short_date(f['date'])} {SIDE_KO.get(side, side)} **{f['symbol']}** "
+                   f"{shares(f['shares'])} @ {money(f['price'])}")
+    out.append("skills/log/SKILL.md에 따라 빠진 기록을 logs/trades/에 쓰고, 주문한 이유를 "
+               "복원해 적으세요. 새로 주문하거나 취소할 것은 없습니다.")
     return out
 
 
@@ -491,8 +532,8 @@ def guarded(title: str, build: Any, *args: Any) -> list[str]:
     except RENDER_ERRORS as exc:
         print(f"digest_lines: {title} section: {exc!r}", file=sys.stderr)
         failed_sections.append(title)
-        return [f"{title}: could not be rendered today ({type(exc).__name__}); "
-                f"see the full review in logs/."]
+        return [f"{title}: 오늘은 표시하지 못했습니다({type(exc).__name__}). "
+                f"전체 리뷰는 logs/에 있습니다."]
 
 
 def agentic_message(logs: Path, date: str) -> str:
@@ -505,28 +546,28 @@ def agentic_message(logs: Path, date: str) -> str:
 
     sleeve = sleeve_line(_text(reviews / f"{date}.md"))
     target = (rec or {}).get("targetSession")
-    head = sleeve or "Sleeve unavailable (no 'Sleeve:' line in today's review)"
+    head = sleeve or "Agentic 계좌 금액 없음(오늘 리뷰에 'Sleeve:' 줄이 없음)"
     opening = ["**Hermes Trader — Agentic**", f"{head}; {slots_clause(target, tax)}."]
     blocks: list[list[str]] = [opening]
 
     if rec is None:
-        blocks.append(["No decision record today, so no proposals can be listed; "
-                       "read logs/reviews/ directly."])
+        blocks.append(["오늘 결정 기록이 없어 제안을 나열할 수 없습니다. "
+                       "logs/reviews/를 직접 보세요."])
     else:
-        blocks += [b for b in (guarded("Decisions", decision_section, rec),
-                               guarded("Read past a threshold", departure_section, rec)) if b]
-        blocks.append(guarded("Proposals", proposal_lines, rec, signals, standing, tax))
-    for section in (guarded("Trade log", unlogged_section, recon),
-                    guarded("Reconcile", reconcile_section, recon,
+        blocks += [b for b in (guarded("결정 요청", decision_section, rec),
+                               guarded("기준을 넘어 판단한 항목", departure_section, rec)) if b]
+        blocks.append(guarded("제안", proposal_lines, rec, signals, standing, tax))
+    for section in (guarded("거래 기록", unlogged_section, recon),
+                    guarded("시트 대조", reconcile_section, recon,
                             (logs / "reconcile" / f"{date}.md").exists())):
         if section:
             blocks.append(section)
-    checks = guarded("Checks", checks_section, recon)
+    checks = guarded("점검", checks_section, recon)
     if checks:
         blocks.append(checks)
     shadow = _text(logs / "shadow" / "latest.txt")
     if shadow:
-        blocks.append(["Shadow check:", shadow])
+        blocks.append(["Shadow 점검:", shadow])
     briefing = _text(logs / "digest" / f"{date}.briefing.md")
     if briefing:
         blocks.append([briefing])
@@ -545,13 +586,13 @@ def checks_line(recon: dict[str, Any] | None) -> str | None:
         return None
     parts = []
     if not recon.get("alerts"):
-        parts.append("the sheet matches Robinhood")
+        parts.append("시트가 Robinhood와 일치")
     trade_log = recon.get("tradeLog") or {}
     if not trade_log.get("findings"):
         n = trade_log.get("filledInWindow", 0)
-        parts.append("no filled Agentic orders in the trade-log window" if not n
-                     else f"all {n} filled Agentic orders logged")
-    return "Checks: " + "; ".join(parts) + "." if parts else None
+        parts.append("거래 기록 점검 기간에 체결된 Agentic 주문 없음" if not n
+                     else f"체결된 Agentic 주문 {n}건 모두 기록됨")
+    return "점검: " + "; ".join(parts) + "." if parts else None
 
 
 def checks_section(recon: dict[str, Any] | None) -> list[str]:
@@ -576,8 +617,8 @@ def main() -> int:
             # A record with a shape this script did not expect must not cost the day's
             # message: say what happened and where the full review is.
             print(f"digest_lines: {name}: {exc!r}", file=sys.stderr)
-            text = (f"⚠️ The {args.date} digest could not be assembled ({type(exc).__name__}); "
-                    f"the full review is in logs/reviews/{args.date}.md.\n")
+            text = (f"⚠️ {args.date} digest를 만들지 못했습니다({type(exc).__name__}). "
+                    f"전체 리뷰는 logs/reviews/{args.date}.md에 있습니다.\n")
             rc = 1
         (digest / name).write_text(text)
     return 1 if failed_sections else rc

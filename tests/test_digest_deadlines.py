@@ -21,6 +21,10 @@ EXPIRED = [
     "A third — act by the close.",
     "Decide on the position ahead of the bell.",
     "Resolve this before today's close.",
+    # The briefing note is Korean since the trader's messages moved to Korean.
+    "브리핑: PANW 실적 발표 전이라 일부 매도할지 보유할지 마감 전에 정하세요.",
+    "NVDA는 오늘 결정이 필요합니다.",
+    "오늘장 마감 전 판단하세요.",
 ]
 
 # Answerable when the message lands, so not a finding.
@@ -34,7 +38,19 @@ FINE = [
     # draft matched month PREFIXES and cleared the shipped message on the word
     # "decide" itself.
     "You may decide to march on; there is no deadline.",
+    "브리핑: NVDA는 내일 장 마감 전에 정하면 됩니다.",
+    "금요일 개장 전에 다시 보세요.",
+    "PANW는 12월 2일 마감 전까지 판단하면 됩니다.",
+    "특별히 결정할 일은 없습니다.",
 ]
+
+
+def test_expired_deadlines_are_flagged():
+    assert [t for t in EXPIRED if not c.findings(t)] == []
+
+
+def test_answerable_deadlines_are_not_flagged():
+    assert [t for t in FINE if c.findings(t)] == []
 
 
 def main():

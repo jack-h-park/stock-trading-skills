@@ -28,7 +28,11 @@ from pathlib import Path
 # post-close message. Bare by design — a qualifier is what makes them legitimate.
 SAME_SESSION = re.compile(
     r"\b(?:before|by|ahead of)\s+(?:the\s+)?(?:closing\s+)?"
-    r"(?:bell|close|open)\b|\bdecide\s+today\b|\bbefore\s+today'?s\s+\w+",
+    r"(?:bell|close|open)\b|\bdecide\s+today\b|\bbefore\s+today'?s\s+\w+"
+    # The same deadlines in Korean, which the briefing note is written in since the
+    # trader's messages moved to Korean. No \b: Python counts Hangul as word
+    # characters, so a boundary would miss "오늘장 마감 전".
+    r"|(?:장\s*)?마감\s*전|종가\s*전|(?:개장|장\s*시작)\s*전|오늘\s*(?:안에|중에|중으로)?\s*결정",
     re.IGNORECASE,
 )
 
@@ -47,7 +51,8 @@ FUTURE_QUALIFIER = re.compile(
     r"|\bfollowing\s+(?:session|day|open|close|week)\b"
     r"|\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b"
     r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)"
-    r"[a-z]*\.?\s+\d{1,2}\b",
+    r"[a-z]*\.?\s+\d{1,2}\b"
+    r"|내일|다음|이튿날|[월화수목금토일]요일|\d{1,2}월\s*\d{1,2}일",
     re.IGNORECASE,
 )
 LOOKBEHIND = 60  # characters; enough for "before Wednesday's" and its lead-in

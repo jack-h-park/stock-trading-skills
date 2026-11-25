@@ -28,7 +28,7 @@ export PATH="$PATH:/usr/bin:/bin"
 unset _d
 
 if [ ! -d "$REPO" ]; then
-  echo "⚠️ agentic-execute $DATE_ISO: configured repo does not exist at $REPO — nothing submitted. Set TRADING_AGENT_REPO in the trader profile .env to the current checkout path."
+  echo "⚠️ agentic-execute $DATE_ISO: 설정된 저장소 경로 $REPO 가 없어 아무것도 제출하지 않았습니다. trader profile .env의 TRADING_AGENT_REPO를 현재 checkout 경로로 고쳐 주세요."
   exit 1
 fi
 
@@ -41,7 +41,7 @@ python3 "$REPO/scripts/hermes/market-check.py" 2>"$MARKET_CHECK_ERR"
 MARKET_CHECK_RC=$?
 if [ "$MARKET_CHECK_RC" -ne 0 ]; then
   if [ -s "$MARKET_CHECK_ERR" ]; then
-    echo "⚠️ agentic-execute $DATE_ISO: market-check.py errored (rc=$MARKET_CHECK_RC) — nothing submitted. $(head -c 300 "$MARKET_CHECK_ERR" | tr '\n' ' ')"
+    echo "⚠️ agentic-execute $DATE_ISO: market-check.py가 오류를 냈습니다(rc=$MARKET_CHECK_RC). 아무것도 제출하지 않았습니다. $(head -c 300 "$MARKET_CHECK_ERR" | tr '\n' ' ')"
     rm -f "$MARKET_CHECK_ERR"
     exit 1
   fi
