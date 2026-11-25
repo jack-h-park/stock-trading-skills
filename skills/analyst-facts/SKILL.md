@@ -34,10 +34,10 @@ score or a "consensus strength" — a composite is a verdict with the arithmetic
 
 ## Reply shape
 
-Verdict line stating what was fetched (not what to do), the script's compact table, the
-source lines (ratings as-of, price time), then a `<<<KO>>>` block with the Korean copy of
-the headline and table labels only. Say "no analyst coverage" or "price targets not
-available" where the script does; never as zero.
+In Korean (docs/decisions.md §25): a verdict line stating what was fetched (not what to
+do), the script's compact table with Korean labels, then the source lines (ratings as-of,
+price time). Numbers, tickers and dates stay as they are. Say "애널리스트 커버리지 없음" or "목표가 정보 없음" where the script reports none;
+never as zero.
 
 ## Refusals
 

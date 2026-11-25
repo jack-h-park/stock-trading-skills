@@ -45,14 +45,15 @@ Arguments, output fields and exit codes: `references/cli-catalogue.md`.
 
 ## Reply shape
 
+The reply is written in Korean (docs/decisions.md §25): the verdict line and the table's
+labels. Numbers, tickers, dates and the provenance lines quoted from the output stay as they are.
+
 1. **Verdict line** — what changed, or the scenario's headline difference, in one sentence.
 2. **Compact table** — the few rows that answer the question. Link the full JSON/MD file
    instead of pasting every lot.
 3. **Provenance lines**, quoted from the output: DB build time, policy hash and mtime,
    price source and as-of, FX dates, credit mode, which sources were unavailable, and
    "Estimate under the stated inputs; not tax advice."
-4. A `<<<KO>>>` block with a Korean copy of the verdict line and the table's labels only.
-   Numbers, tickers and dates are not restated there.
 
 Detail and an example: `references/presentation.md`. Something the owner must decide (a
 sale plan, a policy difference to apply) goes to Discord; awareness goes to the trader
