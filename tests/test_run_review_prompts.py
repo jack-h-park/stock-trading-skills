@@ -175,3 +175,29 @@ def test_placement_time_conditions_are_judged_for_the_target_session():
     assert so.in_session(datetime.datetime(2026, 10, 23, 14, 5, tzinfo=utc))
     # and only an "ok" settled-close verdict passes its price check.
     assert "if v == \"ok\":" in (REPO / "scripts" / "scheduled_orders.py").read_text()
+
+
+# decisions §25: the message is Korean, so the review writes the fields the digest shows
+# in Korean, except two phrases digest_lines.py parses. Pin those phrases to the parser
+# that reads them, so rewording one side cannot silently break the other.
+def test_the_review_writes_message_fields_in_korean_and_keeps_the_parsed_phrases():
+    import importlib.util
+
+    prompt = _expanded("PROMPT_A")
+    assert "LANGUAGE OF THE FREE-TEXT FIELDS" in prompt
+    assert "blocked[].rule as an English rule name" in prompt
+    spec = importlib.util.spec_from_file_location(
+        "digest_lines", SCRIPT.parent / "digest_lines.py")
+    dl = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dl)  # type: ignore[union-attr]
+    value = "committed $200.00 of $200 · $100 매수 시 $300.00; 매도 시 clears 2026-12-21"
+    assert "'committed $X of $Y'" in prompt and "'clears YYYY-MM-DD'" in prompt
+    assert dl.block_figure(value) == "committed $200.00 of $200"
+    assert dl.figure_ko(dl.block_figure(value)) == "약정 $200.00 / 한도 $200"
+    assert dl.conditional_wash_clear("proposed stop-loss wash-sale block", value) == "2026-12-21"
+
+
+def test_the_briefing_note_is_korean_and_names_its_session():
+    prompt = _expanded("PROMPT_D")
+    assert "start it with '브리핑:'" in prompt
+    assert "Plain Korean sentences" in prompt

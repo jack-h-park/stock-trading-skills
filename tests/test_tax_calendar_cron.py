@@ -53,13 +53,13 @@ def test_speaks_on_change_and_stays_quiet_on_repeat(tmp_path):
 def test_clean_is_silent_on_first_run_and_announced_once_after_windows(tmp_path):
     assert _run(tmp_path, STUB_FP="clean").stdout == ""
     _run(tmp_path, STUB_FP="aaaa")
-    assert "back to clean" in _run(tmp_path, STUB_FP="clean").stdout
+    assert "다시 깨끗해졌습니다" in _run(tmp_path, STUB_FP="clean").stdout
     assert _run(tmp_path, STUB_FP="clean").stdout == ""
 
 
 def test_a_failed_script_exits_1_and_alerts_once(tmp_path):
     first = _run(tmp_path, STUB_FAIL="1", STUB_FP="x")
-    assert first.returncode == 1 and "tax-calendar FAILED" in first.stdout
+    assert first.returncode == 1 and "tax-calendar 실패" in first.stdout
     assert "stub exploded" in first.stdout
     second = _run(tmp_path, STUB_FAIL="1", STUB_FP="x")
     assert second.returncode == 1 and second.stdout == ""

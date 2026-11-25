@@ -42,6 +42,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -387,26 +388,120 @@ def headline(doc: dict[str, Any]) -> str:
     return head
 
 
+# The Telegram notice is in Korean; the .md table below is read by interactive
+# sessions and stays English, as does every string in the JSON (notes, problems,
+# reasons), because the fingerprint and other readers depend on them. The helpers
+# here translate at render time and pass anything they do not recognise through
+# unchanged, so a new English note shows up rather than disappearing.
+
+SOURCE_KO = {"robinhood": "Robinhood", "observatory": "Observatory", "earnings": "실적 발표"}
+STATUS_KO = {"ok": "정상", "unavailable": "응답 없음"}
+SIDE_KO = {"buy": "매수", "sell": "매도"}
+STATE_KO = {"new": "신규", "queued": "대기", "confirmed": "접수", "unconfirmed": "미확인",
+            "partially_filled": "일부 체결", "filled": "체결"}
+INTENT_KO = {"loss-harvest": "절세용 손실 매도", "gain": "차익 실현", "other": "기타"}
+CONFLICT_KO = {"buy-in-window": "기간 내 매수", "drip-active": "배당 재투자(DRIP) 진행 중"}
+EFFECT_KO = {
+    "open-buy-inside-window": "체결되면 열린 wash-sale 기간의 손실 공제가 이연됩니다",
+    "open-buy": "체결되면 체결일 전후 30일 안의 손실 매도는 공제가 이연됩니다",
+    "open-sell": "손실로 체결되면 30일 wash-sale 기간이 시작됩니다",
+    "filled-buy-inside-window": "손실 매도 30일 이내의 매수라 그 손실 공제가 이연됩니다",
+    "recent-buy": "이 날짜 이전의 손실 매도는 공제가 이연됩니다",
+}
+REASON_KO = {"refresh-in-progress": "데이터베이스 갱신 중",
+             "skipped (--no-robinhood)": "건너뜀 (--no-robinhood)",
+             "skipped (--no-observatory)": "건너뜀 (--no-observatory)",
+             "no account found in config/accounts.local.md":
+                 "config/accounts.local.md에 계좌 없음"}
+_NOTE_KO = (
+    (re.compile(r"^planned date has passed$"), lambda m, a: "예정일 지남"),
+    (re.compile(r"^an open wash-sale window on (\S+) runs through (\d{4}-\d{2}-\d{2})$"),
+     lambda m, a: f"{m[1]} wash-sale 기간이 {_ko_day(m[2], a)}까지 열려 있음"),
+)
+_PROBLEM_KO = (
+    (re.compile(r"^(.+?): unreadable \((.*)\)$"), lambda m, a: f"{m[1]}: 읽을 수 없음 ({m[2]})"),
+    (re.compile(r"^(.+?): expected a JSON list$"), lambda m, a: f"{m[1]}: JSON 목록이 아님"),
+    (re.compile(r"^(.+?): not an object$"), lambda m, a: f"{m[1]}: 객체가 아님"),
+    (re.compile(r"^(.+?): planned_date is not YYYY-MM-DD$"),
+     lambda m, a: f"{m[1]}: planned_date가 YYYY-MM-DD 형식이 아님"),
+    (re.compile(r"^(.+?): ticker missing$"), lambda m, a: f"{m[1]}: ticker 없음"),
+    (re.compile(r"^(.+?): intent must be one of (.+)$"),
+     lambda m, a: f"{m[1]}: intent는 {m[2]} 중 하나여야 함"),
+)
+
+
+def _translate(text: str, table: Any, as_of: str | None = None) -> str:
+    for pattern, fmt in table:
+        m = pattern.match(text)
+        if m:
+            return fmt(m, as_of)
+    return text
+
+
+def _ko_day(iso: str, as_of: str | None = None) -> str:
+    """'11월 18일' in the as-of year, '2026년 12월 5일' otherwise or when there is no
+    as-of date to compare with."""
+    try:
+        d = D(iso)
+    except ValueError:
+        return iso
+    year = D(as_of).year if as_of else None
+    return f"{d.month}월 {d.day}일" if year == d.year else f"{d.year}년 {d.month}월 {d.day}일"
+
+
+def _ko_reason(reason: str) -> str:
+    return REASON_KO.get(reason, reason)
+
+
+def _source_line_ko(doc: dict[str, Any]) -> str:
+    parts = []
+    for name in SOURCES:
+        s = doc["sources"][name]
+        if name == "earnings" and s.get("detail") == "not-needed":
+            continue
+        parts.append(f"{SOURCE_KO[name]} {STATUS_KO.get(s['status'], s['status'])}"
+                     + (f" ({_ko_reason(s['reason'])})" if s.get("reason") else ""))
+    return "출처: " + " · ".join(parts)
+
+
+def headline_ko(doc: dict[str, Any]) -> str:
+    n_conf = sum(1 for p in doc["plannedSales"] if p["conflicts"])
+    unavailable = [k for k, v in doc["sources"].items() if v["status"] == "unavailable"]
+    touching = sum(1 for e in doc["orderEvents"] if e["effect"] in FINGERPRINT_EFFECTS)
+    head = (f"세금 일정 {_ko_day(doc['asOf'])}: 열린 wash-sale 기간 {len(doc['windows'])}건, "
+            f"기간 내 매수 {touching}건, 예정된 매도 충돌 {n_conf}건")
+    if unavailable:
+        head += " — 일부만 확인됨, " + ", ".join(SOURCE_KO.get(k, k) for k in unavailable) \
+            + " 출처 응답 없음"
+    return head
+
+
 def render_message(doc: dict[str, Any], md_path: str) -> str:
-    lines = [headline(doc)]
+    """The Telegram notice, in Korean (see the note above SOURCE_KO)."""
+    as_of = doc["asOf"]
+    lines = [headline_ko(doc)]
     for w in doc["windows"]:
-        lines.append(f"- {w['ticker']} blocked through {w['blockedThrough']} "
-                     f"({w['daysLeft']}d) · last loss sale {w['lastSale']} · reported by "
-                     f"{', '.join(w['reportedBy'])}" + (" · DRIP on" if w["dripActive"] else ""))
+        lines.append(f"- {w['ticker']} wash-sale 기간 {_ko_day(w['blockedThrough'], as_of)}까지 "
+                     f"({w['daysLeft']}일 남음) · 마지막 손실 매도 {_ko_day(w['lastSale'], as_of)}"
+                     f" · 보고: {', '.join(SOURCE_KO.get(r, r) for r in w['reportedBy'])}"
+                     + (" · 배당 재투자(DRIP) 진행 중" if w["dripActive"] else ""))
     for e in doc["orderEvents"]:
         if e["effect"] in ("open-buy-inside-window", "filled-buy-inside-window", "open-sell"):
-            lines.append(f"- {e['ticker']} {e['side']} ({e['account']}, {e['state']}): {e['note']}")
+            lines.append(f"- {e['ticker']} {SIDE_KO.get(e['side'], e['side'])} "
+                         f"({e['account']}, {STATE_KO.get(e['state'], e['state'])}): "
+                         f"{EFFECT_KO.get(e['effect'], e['note'])}")
     for p in doc["plannedSales"]:
-        bits = [c["kind"] for c in p["conflicts"]]
-        bits += [f"earnings {r['date']}" + ("" if r["verified"] else " (tentative)")
+        bits = [CONFLICT_KO.get(c["kind"], c["kind"]) for c in p["conflicts"]]
+        bits += [f"실적 발표 {_ko_day(r['date'], as_of)}" + ("" if r["verified"] else " (미확정)")
                  for r in p["earningsInWindow"]["dates"]]
-        bits += p["notes"]
-        lines.append(f"- planned {p['intent']} {p['ticker']} on {p['planned_date']}: "
-                     + ("; ".join(bits) if bits else "nothing in its window"))
+        bits += [_translate(n, _NOTE_KO, as_of) for n in p["notes"]]
+        lines.append(f"- 예정된 매도 ({INTENT_KO.get(p['intent'], p['intent'])}) {p['ticker']} "
+                     f"{_ko_day(p['planned_date'], as_of)}: "
+                     + ("; ".join(bits) if bits else "기간 내 해당 사항 없음"))
     for prob in doc["plannedSalesProblems"]:
-        lines.append(f"- planned-sales file: {prob}")
-    lines.append(_source_line(doc))
-    lines.append(f"Full table: {md_path}")
+        lines.append(f"- 예정된 매도 파일 문제: {_translate(prob, _PROBLEM_KO)}")
+    lines.append(_source_line_ko(doc))
+    lines.append(f"전체 표: {md_path}")
     return "\n".join(lines)
 
 

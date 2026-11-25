@@ -581,3 +581,32 @@ information, but it needs the flag list as a record and a day-over-day compariso
 transfers distort, for a message whose job the morning briefing mostly does. The
 cross-account total including cash and crypto is no longer pushed anywhere; it stays in
 the review, and the change summary remains the way to bring it back if it is missed.
+
+## 25. Every message the trader sends is in Korean (2026-11-24)
+
+**Decision.** What reaches Jack from this repository is written in Korean: the Agentic
+message on Discord, the morning order report, the tax-calendar notice and the wrapper
+alerts on Telegram. The lines code writes are Korean templates (`digest_lines.py`,
+`scheduled_orders.py`, `tax_calendar.py`, `shadow-check.py`, the three wrappers in
+`scripts/hermes/`). The fields the review model writes for the message are written in
+Korean by instruction: the departure and decision-request text, the block figures and
+the briefing note. Symbols, numbers, dollar amounts, dates in technical detail, paths,
+job names, account roles and product names stay as they are.
+
+What other code reads stays English: decision-record keys and enums, `blocked[].rule`
+(which `scheduled_orders.py` matches on), verdict values, the tax calendar's JSON and
+fingerprint, the review report under `logs/reviews/`, the trade log, and the
+interactive `.md` tables. Two English phrases are kept inside otherwise Korean block
+values because `digest_lines.py` parses them: `committed $X of $Y` and
+`clears YYYY-MM-DD`. A rule name the digest has no Korean label for is shown as the
+review wrote it rather than dropped.
+
+**Why.** The fleet-wide default is English, so that a message assembled from a code
+template and a composed sentence cannot switch language mid-line. Here both halves are
+owned by this repository and change together, so the same guarantee holds with both in
+Korean, and Korean is what the messages' only reader reads. The control plane records
+this as a narrowly scoped exception to its English message rule.
+
+**Chosen against.** Translating the finished English message with a model: a second
+model pass per message, and a translation can change a number. Changing the
+fleet-wide rule: the other profiles' messages are not part of this decision.

@@ -163,8 +163,8 @@ def test_without_the_local_file_it_is_a_dry_run_and_places_nothing(repo):
     assert rc == 0
     assert broker.placed() == []
     assert "review_equity_order" in broker.names()  # the simulation still runs
-    assert "would submit: buy VOO $100.00" in "\n".join(lines)
-    assert "[dry run]" in lines[0]
+    assert "제출 예정: 매수 VOO $100.00" in "\n".join(lines)
+    assert "[시험 실행]" in lines[0]
 
 
 @pytest.mark.parametrize("content", ['{"scheduledPlacement": "auto"}', "not json",
@@ -187,7 +187,7 @@ def test_live_submits_with_a_deterministic_ref_id_and_logs_it(repo):
                      "market_hours": "regular_hours", "time_in_force": "gfd",
                      "ref_id": so.ref_id(AGENTIC, TODAY, "VOO")}
     assert so.ref_id(AGENTIC, TODAY, "VOO") == so.ref_id(AGENTIC, TODAY, "VOO")
-    assert "waiting for your approval" in lines[0]
+    assert "승인을 기다리고 있습니다" in lines[0]
     log = (repo / "logs" / "trades" / f"{TODAY}.md").read_text()
     assert log.count("## ") == 2 and "standing-auth" in log and AGENTIC not in log
     journal = json.loads((repo / "logs" / "executions" / f"{TODAY}.json").read_text())
@@ -206,8 +206,8 @@ def test_a_pending_approval_uses_a_slot_and_blocks_its_symbol(repo):
     _, lines = run(repo, broker)
     assert broker.placed() == []
     text = "\n".join(lines)
-    assert "VOO: an order or pending approval on this symbol exists today" in text
-    assert "MSFT: order count cap" in text
+    assert "VOO: 오늘 이 종목에 주문 또는 승인 대기가 이미 있음" in text
+    assert "MSFT: 주문 건수 한도" in text
 
 
 def test_a_pending_approval_without_an_amount_stops_everything(repo):
@@ -216,7 +216,7 @@ def test_a_pending_approval_without_an_amount_stops_everything(repo):
     broker = FakeBroker(pending=[{"approval_id": "a1", "symbol": "AAPL"}])
     _, lines = run(repo, broker)
     assert broker.placed() == []
-    assert "daily ceiling cannot be checked" in lines[-1]
+    assert "일일 한도를 확인할 수 없습니다" in lines[-1]
 
 
 def test_a_failed_submit_is_journaled_as_uncertain_and_not_resent(repo):
@@ -224,7 +224,7 @@ def test_a_failed_submit_is_journaled_as_uncertain_and_not_resent(repo):
     write_record(repo, [buy("VOO")])
     broker = FakeBroker(placed_reply=RuntimeError("timed out"))
     _, lines = run(repo, broker)
-    assert "outcome unknown" in "\n".join(lines)
+    assert "결과 불명" in "\n".join(lines)
     journal = json.loads((repo / "logs" / "executions" / f"{TODAY}.json").read_text())
     assert journal["orders"][0]["status"] == "uncertain"
     assert not (repo / "logs" / "trades" / f"{TODAY}.md").exists()
@@ -238,8 +238,8 @@ def test_a_reply_with_no_id_is_not_reported_as_submitted(repo):
     write_record(repo, [buy("VOO")])
     broker = FakeBroker(placed_reply={"data": {"message": "something else"}})
     _, lines = run(repo, broker)
-    assert "submitted: buy" not in "\n".join(lines)
-    assert "unknown outcome" in lines[0]
+    assert "승인 대기로 제출: 매수" not in "\n".join(lines)
+    assert "결과 불명" in lines[0]
 
 
 def test_an_approval_setting_for_another_account_is_an_error(repo):
@@ -263,7 +263,7 @@ def test_a_rerun_the_same_day_does_not_submit_again(repo):
     second = FakeBroker()
     _, lines = run(repo, second)
     assert second.placed() == []
-    assert "already submitted today" in "\n".join(lines)
+    assert "오늘 이미 제출함" in "\n".join(lines)
 
 
 # ── the Level 1 precondition ─────────────────────────────────────────────────
@@ -275,7 +275,7 @@ def test_approvals_off_submits_nothing_and_never_reviews(repo):
     rc, lines = run(repo, broker)
     assert rc == 0
     assert broker.names() == ["get_trade_approval_setting"]
-    assert "approvals are OFF" in lines[0]
+    assert "거래 승인이 꺼져 있습니다" in lines[0]
 
 
 def test_an_unreadable_approval_setting_is_an_error_not_a_yes(repo):
@@ -287,10 +287,10 @@ def test_an_unreadable_approval_setting_is_an_error_not_a_yes(repo):
 
 @pytest.mark.parametrize("review,why", [
     ({"data": {"customer_approval_required": False, "order_checks": []}},
-     "customer_approval_required"),
-    ({"data": {"order_checks": []}}, "customer_approval_required"),
+     "customer_approval_required를 보고하지 않음"),
+    ({"data": {"order_checks": []}}, "customer_approval_required를 보고하지 않음"),
     ({"data": {"customer_approval_required": True,
-               "order_checks": [{"type": "buying_power"}]}}, "order checks"),
+               "order_checks": [{"type": "buying_power"}]}}, "order_checks 경고"),
 ])
 def test_review_must_say_the_order_goes_to_the_app(repo, review, why):
     go_live(repo)
@@ -304,12 +304,12 @@ def test_review_must_say_the_order_goes_to_the_app(repo, review, why):
 # ── what the record may carry ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("decision,conflict,why", [
-    (buy("TQQQ"), {}, "universe"),
-    (buy("VOO", 150), {}, "over the $100 cap"),
-    (buy("VOO", kind="trim"), {}, "kind"),
-    (buy("VOO", shares=0.2), {}, "share quantity"),
-    (buy("GOOGL"), {"departures": [{"symbol": "GOOGL"}]}, "departure"),
-    (buy("GOOGL"), {"decisionRequests": [{"symbol": "GOOGL"}]}, "decision request"),
+    (buy("TQQQ"), {}, "종목 범위에 없음"),
+    (buy("VOO", 150), {}, "$100 한도를 넘음"),
+    (buy("VOO", kind="trim"), {}, "주문 종류가 'trim'"),
+    (buy("VOO", shares=0.2), {}, "주식 수량"),
+    (buy("GOOGL"), {"departures": [{"symbol": "GOOGL"}]}, "기준을 넘어 판단"),
+    (buy("GOOGL"), {"decisionRequests": [{"symbol": "GOOGL"}]}, "결정 요청"),
 ])
 def test_record_level_refusals(repo, decision, conflict, why):
     go_live(repo)
@@ -325,7 +325,7 @@ def test_a_redistribute_buy_is_a_buy(repo):
     write_record(repo, [buy("VOO", kind="redistribute")])
     broker = FakeBroker()
     _, lines = run(repo, broker)
-    assert "kind" not in "\n".join(lines)
+    assert "주문 종류" not in "\n".join(lines)
     assert broker.placed() != []
 
 
@@ -337,7 +337,7 @@ def test_a_buy_beside_an_exit_on_the_same_symbol_is_refused(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.placed() == []
-    assert "exit is also proposed" in "\n".join(lines)
+    assert "매도(청산)도 제안됨" in "\n".join(lines)
 
 
 def test_not_auto_eligible_and_sells_are_never_candidates(repo):
@@ -348,7 +348,7 @@ def test_not_auto_eligible_and_sells_are_never_candidates(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.calls == []
-    assert "no auto-eligible buy" in lines[0]
+    assert "자동 실행 대상 매수가 없습니다" in lines[0]
 
 
 @pytest.mark.parametrize("date,target", [(YESTERDAY, "2026-10-16"), (TODAY, TODAY)])
@@ -358,7 +358,7 @@ def test_only_an_earlier_record_targeting_today_counts(repo, date, target):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.calls == []
-    assert "no decision record targets today" in lines[0]
+    assert "대상으로 한 결정 기록이 없어" in lines[0]
 
 
 def test_an_older_record_is_not_reached_past_a_newer_one(repo):
@@ -377,7 +377,7 @@ def test_a_price_the_settled_close_contradicts_is_refused(repo, tmp_path):
     broker = FakeBroker()
     _, lines = run(repo, broker, db=db)
     assert broker.calls == []
-    assert "price check: price-mismatch" in "\n".join(lines)
+    assert "가격 점검 미통과: 가격 불일치" in "\n".join(lines)
 
 
 @pytest.mark.parametrize("db", ["missing-row", "missing-file"])
@@ -390,7 +390,7 @@ def test_no_settled_close_means_no_order(repo, tmp_path, db):
     broker = FakeBroker()
     _, lines = run(repo, broker, db=path)
     assert broker.calls == []
-    assert "price check: no-settled-row" in "\n".join(lines)
+    assert "가격 점검 미통과: 확정 종가 없음" in "\n".join(lines)
 
 
 def test_a_record_priced_off_another_session_is_refused(repo):
@@ -399,7 +399,7 @@ def test_a_record_priced_off_another_session_is_refused(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.calls == []
-    assert "is not the review's own session" in "\n".join(lines)
+    assert "리뷰 거래일(2026-10-14)과 다름" in "\n".join(lines)
 
 
 def test_a_symbol_the_record_also_blocks_is_refused(repo):
@@ -418,7 +418,7 @@ def test_a_wash_sale_block_without_a_clearing_date_still_blocks(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.calls == []
-    assert "no readable clearing date" in "\n".join(lines)
+    assert "해제일을 읽을 수 없음" in "\n".join(lines)
 
 
 def test_a_symbol_in_a_wash_sale_window_is_refused(repo):
@@ -429,7 +429,8 @@ def test_a_symbol_in_a_wash_sale_window_is_refused(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.placed() == ["VOO"]
-    assert "wash-sale window until 2026-11-01" in "\n".join(lines)
+    assert ("wash-sale 기간, 2026년 11월 1일 매수 재개 (2026년 10월 1일 손실 매도)"
+            in "\n".join(lines))
 
 
 def test_a_tax_file_whose_robinhood_half_failed_blocks_every_buy(repo):
@@ -439,7 +440,7 @@ def test_a_tax_file_whose_robinhood_half_failed_blocks_every_buy(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.calls == []
-    assert "no tax facts" in "\n".join(lines)
+    assert "세금 정보가 없음" in "\n".join(lines)
 
 
 def test_an_observatory_block_names_the_brokerage(repo):
@@ -451,7 +452,8 @@ def test_an_observatory_block_names_the_brokerage(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.placed() == ["VOO"]
-    assert "wash-sale window until 2026-11-01 (loss sale at Fidelity ••1234)" in "\n".join(lines)
+    assert ("wash-sale 기간, 2026년 11월 1일 매수 재개 (Fidelity ••1234에서 손실 매도)"
+            in "\n".join(lines))
 
 
 def test_missing_tax_facts_block_every_buy(repo):
@@ -461,15 +463,15 @@ def test_missing_tax_facts_block_every_buy(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.calls == []
-    assert "no tax facts" in "\n".join(lines)
+    assert "세금 정보가 없음" in "\n".join(lines)
 
 
 # ── other brokerages: blocked when unknown, warned when stale ────────────────
 
 @pytest.mark.parametrize("observatory,why", [
-    (None, "carry no Observatory status"),
-    ({"status": "missing"}, "Observatory missing"),
-    ({"status": "refused: schemaVersion 9"}, "Observatory refused"),
+    (None, "Observatory 상태가 없음"),
+    ({"status": "missing"}, "Observatory 상태 missing"),
+    ({"status": "refused: schemaVersion 9"}, "Observatory 상태 refused"),
 ])
 def test_no_usable_observatory_blocks_every_buy(repo, observatory, why):
     go_live(repo)
@@ -489,24 +491,25 @@ def test_a_stale_observatory_submits_with_a_warning(repo):
     _, lines = run(repo, broker)
     assert broker.placed() == ["VOO"]
     text = "\n".join(lines)
-    assert "checked only through 2026-10-09, 4 weekday(s) not yet filed" in text
+    assert "2026년 10월 9일까지만 확인했습니다(평일 4일분 아직 미제출)" in text
+    # The trade log is a repo file and stays English.
     log = (repo / "logs" / "trades" / f"{TODAY}.md").read_text()
-    assert "checked only through 2026-10-09" in log
+    assert "checked only through 2026-10-09, 4 weekday(s) not yet filed" in log
 
 
 def test_a_fresh_observatory_adds_no_warning(repo):
     go_live(repo)
     write_record(repo, [buy("VOO")])
     _, lines = run(repo, FakeBroker())
-    assert "checked only through" not in "\n".join(lines)
+    assert "까지만 확인했습니다" not in "\n".join(lines)
 
 
 def test_the_stale_warning_appears_in_a_dry_run_too(repo):
     write_record(repo, [buy("VOO")], tax={"observatory": {
         "status": "ok", "stale": True, "transactionsThrough": "2026-10-09"}})
     _, lines = run(repo, FakeBroker())
-    assert "would submit" in "\n".join(lines)
-    assert "checked only through 2026-10-09." in "\n".join(lines)
+    assert "제출 예정" in "\n".join(lines)
+    assert "2026년 10월 9일까지만 확인했습니다." in "\n".join(lines)
 
 
 # ── counts and clock ─────────────────────────────────────────────────────────
@@ -524,7 +527,7 @@ def test_weekly_count_leaves_one_slot(repo):
     broker = FakeBroker(orders=week)
     _, lines = run(repo, broker)
     assert broker.placed() == ["VOO"]
-    assert "order count cap" in "\n".join(lines)
+    assert "주문 건수 한도" in "\n".join(lines)
 
 
 def test_an_order_from_last_week_does_not_count(repo):
@@ -545,7 +548,7 @@ def test_an_order_already_on_the_symbol_today_blocks_a_second(repo):
     broker = FakeBroker(orders=[order("2026-10-15T13:50:00Z", sym="VOO")])
     _, lines = run(repo, broker)
     assert broker.placed() == []
-    assert "pending approval on this symbol exists today" in "\n".join(lines)
+    assert "승인 대기가 이미 있음" in "\n".join(lines)
 
 
 def test_an_unvaluable_order_today_stops_everything(repo):
@@ -554,7 +557,7 @@ def test_an_unvaluable_order_today_stops_everything(repo):
     broker = FakeBroker(orders=[order("2026-10-15T13:50:00Z", amount=None)])
     _, lines = run(repo, broker)
     assert broker.placed() == []
-    assert "daily ceiling cannot be checked" in lines[0]
+    assert "일일 한도를 확인할 수 없습니다" in lines[0]
 
 
 def test_a_missing_orders_list_is_an_error(repo):
@@ -577,7 +580,7 @@ def test_outside_the_window_the_broker_is_never_contacted(repo, now):
     broker = FakeBroker()
     _, lines = run(repo, broker, now=now)
     assert broker.calls == []
-    assert "outside the regular-session window" in lines[0]
+    assert "정규장 실행 시간대가 아니어서" in lines[0]
 
 
 def test_no_agentic_account_is_an_error_before_any_call(repo):
@@ -642,7 +645,7 @@ def test_monday_submits_when_the_live_quote_still_shows_the_dip(repo):
     broker = FakeBroker(review=quoted(505.0))  # 6.48% below 540
     _, lines = run(repo, broker, now=MONDAY)
     assert broker.placed() == ["VOO"]
-    assert "live re-check 505, 6.48% below 540" in "\n".join(lines)
+    assert "실시간 재확인 505, 540 대비 −6.48%" in "\n".join(lines)
 
 
 def test_monday_skips_when_the_dip_closed_over_the_weekend(repo):
@@ -651,7 +654,7 @@ def test_monday_skips_when_the_dip_closed_over_the_weekend(repo):
     broker = FakeBroker(review=quoted(520.0))  # 3.70% below 540
     _, lines = run(repo, broker, now=MONDAY)
     assert broker.placed() == []
-    assert "live re-check: 3.70% below the 20-day high 540" in "\n".join(lines)
+    assert "실시간 재확인: 20일 고점 540 대비 −3.70%로 진입 기준 5%에 못 미침" in "\n".join(lines)
 
 
 @pytest.mark.parametrize("price,high", [(None, 540.0), (505.0, None)])
@@ -661,7 +664,7 @@ def test_monday_without_a_quote_or_a_high_submits_nothing(repo, price, high):
     broker = FakeBroker(review=quoted(price))
     _, lines = run(repo, broker, now=MONDAY)
     assert broker.placed() == []
-    assert "no live quote to re-check" in "\n".join(lines)
+    assert "실시간 시세가 없음" in "\n".join(lines)
 
 
 def test_a_next_morning_close_needs_no_live_recheck(repo):
@@ -697,7 +700,7 @@ def test_the_2026_11_02_qqqm_buy_is_not_auto_submitted(repo):
     broker = FakeBroker()
     _, lines = run(repo, broker)
     assert broker.placed() == []
-    assert ("skipped QQQM: 10.70% below the 20-day high is past the 10% TRIM threshold"
+    assert ("건너뜀 QQQM: 20일 고점 대비 −10.70%로 일부 매도 기준 10% 이상"
             in "\n".join(lines))
 
 
@@ -716,13 +719,13 @@ def test_no_signals_or_no_threshold_blocks_every_buy(repo):
     (repo / "logs" / "reviews" / f"{YESTERDAY}.signals.json").unlink()
     broker = FakeBroker()
     _, lines = run(repo, broker)
-    assert broker.placed() == [] and "no signals file" in "\n".join(lines)
+    assert broker.placed() == [] and "signals 파일이 없어" in "\n".join(lines)
 
     write_record(repo, [buy("VOO")])
     (repo / "config" / "trim-policy.md").write_text("no table here")
     broker = FakeBroker()
     _, lines = run(repo, broker)
-    assert broker.placed() == [] and "TRIM threshold" in "\n".join(lines)
+    assert broker.placed() == [] and "일부 매도 기준을 읽을 수 없음" in "\n".join(lines)
 
 
 def test_monday_skips_when_the_live_quote_has_reached_the_trim_zone(repo):
@@ -731,7 +734,7 @@ def test_monday_skips_when_the_live_quote_has_reached_the_trim_zone(repo):
     broker = FakeBroker(review=quoted(480.0))  # 11.11% below 540
     _, lines = run(repo, broker, now=MONDAY)
     assert broker.placed() == []
-    assert "past the 10% TRIM threshold" in "\n".join(lines)
+    assert "일부 매도 기준 10% 이상. 확인을 기다림" in "\n".join(lines)
 
 
 def test_the_threshold_is_read_from_the_trim_policy_table():

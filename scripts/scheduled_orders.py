@@ -73,7 +73,9 @@ an order or pending approval on the symbol at the broker. Each order's ref_id is
 also derived from (account, session, symbol), so a retry sends the same key.
 
 usage: scheduled_orders.py [--repo PATH] [--python PY] [--dry-run] [--now ISO]
-Prints a short English report on stdout (the cron delivers it). Exit 1 when the
+Prints a short Korean report on stdout (the cron delivers it verbatim to Telegram;
+every message from the trader agent is in Korean). The trade log and the journal
+stay English. Exit 1 when the
 broker could not be read or answered in a shape this script does not understand;
 exit 0 otherwise, including when nothing was eligible.
 
@@ -137,6 +139,24 @@ MAX_ORDER_PAGES = 5
 
 class BrokerShapeError(Exception):
     """The broker answered, but not in a shape this script can rely on."""
+
+
+# shadow-check's verdict values, as the report shows them. The values themselves stay
+# English (other code compares them); an unknown one is shown raw.
+VERDICT_KO = {
+    "price-mismatch": "가격 불일치",
+    "no-settled-row": "확정 종가 없음",
+    "incomplete": "정보 부족",
+}
+
+
+def ko_date(iso: Any) -> str:
+    """'2026-11-01' -> '2026년 11월 1일'; anything unreadable is returned as text."""
+    try:
+        d = datetime.date.fromisoformat(str(iso))
+    except ValueError:
+        return str(iso)
+    return f"{d.year}년 {d.month}월 {d.day}일"
 
 
 # ── inputs ────────────────────────────────────────────────────────────────────
@@ -207,25 +227,25 @@ def select(record: dict[str, Any], symbols: set[str]) -> tuple[list[dict[str, An
         notional = _number(d.get("notional"))
         reason = None
         if d.get("kind") not in BUY_KINDS:
-            reason = f"kind is {d.get('kind')!r}, not buy"
+            reason = f"주문 종류가 {d.get('kind')!r}이라 매수가 아님"
         elif sym not in symbols:
-            reason = "not in the strategy/policy.md universe"
+            reason = "strategy/policy.md 종목 범위에 없음"
         elif d.get("shares") is not None:
-            reason = "carries a share quantity; only notional buys are auto-placed"
+            reason = "주식 수량이 지정됨. 자동 실행은 금액 지정 매수만 가능"
         elif notional is None or notional <= 0:
-            reason = "no usable notional"
+            reason = "사용할 수 있는 금액이 없음"
         elif notional > MAX_NOTIONAL:
-            reason = f"notional ${notional:.2f} is over the ${MAX_NOTIONAL:.0f} cap"
+            reason = f"금액 ${notional:.2f}이 ${MAX_NOTIONAL:.0f} 한도를 넘음"
         elif sym in sells:
-            reason = "an exit is also proposed on this symbol"
+            reason = "같은 종목에 매도(청산)도 제안됨"
         elif sym in departed:
-            reason = "carries a departure from a threshold"
+            reason = "기준을 넘어 판단한 기록이 있음"
         elif sym in asked:
-            reason = "has an open decision request"
+            reason = "열린 결정 요청이 있음"
         elif sym in blocked:
-            reason = f"the review also lists it as blocked ({blocked[sym]})"
+            reason = f"리뷰에서 보류로도 분류됨 ({blocked[sym]})"
         elif sym in seen:
-            reason = "a second buy on the same symbol in one record"
+            reason = "한 결정 기록에 같은 종목 매수가 두 번 있음"
         if reason:
             skipped.append((sym, reason))
             continue
@@ -276,17 +296,21 @@ def wash_sale_blocks(record_path: Path, today: str) -> dict[str, str] | None:
         try:
             datetime.date.fromisoformat(clears)
         except ValueError:
-            out[str(sym)] = "wash-sale block with no readable clearing date"
+            out[str(sym)] = "wash-sale 보류인데 해제일을 읽을 수 없음"
             continue
         if clears > today:
-            sale = (f"loss sale at {', '.join(b.get('soldIn') or []) or 'another brokerage'}"
-                    if b.get("source") == "observatory" else f"loss sale {b.get('date')}")
-            out[str(sym)] = f"wash-sale window until {clears} ({sale})"
+            sale = (f"{', '.join(b.get('soldIn') or []) or '다른 증권사'}에서 손실 매도"
+                    if b.get("source") == "observatory"
+                    else f"{ko_date(b.get('date'))} 손실 매도")
+            out[str(sym)] = f"wash-sale 기간, {ko_date(clears)} 매수 재개 ({sale})"
     return out
 
 
-def observatory_coverage(record_path: Path) -> tuple[str | None, str | None]:
-    """(block reason, warning) for the other-brokerage half of the tax facts.
+def observatory_coverage(record_path: Path) -> tuple[str | None, str | None, str | None]:
+    """(block reason, log warning, report warning) for the other-brokerage half of the
+    tax facts. The block reason and the report warning are Korean (they reach the
+    delivered report); the log warning is the same warning in English, for the trade
+    log.
 
     The Observatory supplies wash-sale windows for every brokerage but Robinhood,
     from statements that are filed by hand, so it routinely trails by a few days.
@@ -299,26 +323,32 @@ def observatory_coverage(record_path: Path) -> tuple[str | None, str | None]:
         block most days, since filing lags by design; at Level 1 the person
         approving in the app is the check for the days the summary cannot see.
 
-    A missing tax file is wash_sale_blocks' to report, so it returns (None, None).
+    A missing tax file is wash_sale_blocks' to report, so it returns (None, None, None).
     """
     path = record_path.with_name(record_path.name.replace(".decisions.json", ".tax.json"))
     try:
         doc = json.loads(path.read_text())
     except (OSError, ValueError):
-        return None, None
+        return None, None, None
     obs = doc.get("observatory") if isinstance(doc, dict) else None
     if not isinstance(obs, dict):
-        return "tax facts carry no Observatory status (other brokerages unchecked)", None
+        return "세금 정보에 Observatory 상태가 없음 (다른 증권사 미확인)", None, None
     if obs.get("status") != "ok":
-        return (f"other brokerages unchecked: Observatory {str(obs.get('status'))[:80]}", None)
+        return (f"다른 증권사 미확인: Observatory 상태 {str(obs.get('status'))[:80]}",
+                None, None)
     if obs.get("stale") is not False:
-        through = obs.get("transactionsThrough") or "an unknown date"
+        through = obs.get("transactionsThrough")
         gap = obs.get("missingWeekdays")
         gap_text = f", {gap} weekday(s) not yet filed" if isinstance(gap, int) else ""
-        return None, (f"other brokerages' sales are checked only through {through}{gap_text}. "
-                      "Before approving, make sure none of these was sold at a loss at "
-                      "another brokerage since then")
-    return None, None
+        gap_ko = f"(평일 {gap}일분 아직 미제출)" if isinstance(gap, int) else ""
+        log = (f"other brokerages' sales are checked only through "
+               f"{through or 'an unknown date'}{gap_text}. Before approving, make sure "
+               "none of these was sold at a loss at another brokerage since then")
+        report = (f"다른 증권사 매도 내역은 {ko_date(through) if through else '알 수 없는 날짜'}"
+                  f"까지만 확인했습니다{gap_ko}. 승인하기 전에 그 이후 다른 증권사에서 이 "
+                  "종목들을 손실 매도한 적이 없는지 확인해 주십시오")
+        return None, log, report
+    return None, None, None
 
 
 def trim_threshold(text: str) -> float | None:
@@ -351,15 +381,15 @@ def trim_zone_reason(sym: str, drawdowns: dict[str, float] | None,
     lifted the position past the floor and the TRIM came due four sessions later.
     """
     if threshold is None:
-        return "the TRIM threshold in config/trim-policy.md could not be read"
+        return "config/trim-policy.md의 일부 매도 기준을 읽을 수 없음"
     if drawdowns is None:
-        return "no signals file from the review to check the TRIM zone against"
+        return "리뷰의 signals 파일이 없어 일부 매도 구간을 확인할 수 없음"
     dd = drawdowns.get(sym)
     if dd is None:
-        return "the review's signals carry no drawdown for this symbol"
+        return "리뷰 signals에 이 종목의 낙폭이 없음"
     if dd >= threshold:
-        return (f"{dd:.2f}% below the 20-day high is past the {threshold:g}% TRIM threshold; "
-                "a buy there is a direction choice and waits for confirmation")
+        return (f"20일 고점 대비 −{dd:.2f}%로 일부 매도 기준 {threshold:g}% 이상. "
+                "이 구간의 매수는 방향 선택이라 확인을 기다림")
     return None
 
 
@@ -402,16 +432,15 @@ def live_recheck(review: Any, high: float | None,
     """(skip reason or None, note) for an entry decided on a close that is stale now."""
     live = live_price(review)
     if live is None or not high:
-        return ("the close is over 24h old and there is no live quote to re-check the "
-                "entry against", "")
+        return ("종가가 24시간보다 오래됐는데 진입 조건을 다시 확인할 실시간 시세가 없음", "")
     dd = (high - live) / high * 100
     if dd < ENTRY_DRAWDOWN_PCT:
-        return (f"live re-check: {dd:.2f}% below the 20-day high {high:g}, under the "
-                f"{ENTRY_DRAWDOWN_PCT:g}% entry", "")
+        return (f"실시간 재확인: 20일 고점 {high:g} 대비 −{dd:.2f}%로 진입 기준 "
+                f"{ENTRY_DRAWDOWN_PCT:g}%에 못 미침", "")
     if trim_at is not None and dd >= trim_at:
-        return (f"live re-check: {dd:.2f}% below the 20-day high {high:g}, past the "
-                f"{trim_at:g}% TRIM threshold; waits for confirmation", "")
-    return None, f"live re-check {live:g}, {dd:.2f}% below {high:g}"
+        return (f"실시간 재확인: 20일 고점 {high:g} 대비 −{dd:.2f}%로 일부 매도 기준 "
+                f"{trim_at:g}% 이상. 확인을 기다림", "")
+    return None, f"실시간 재확인 {live:g}, {high:g} 대비 −{dd:.2f}%"
 
 
 # ── broker reads ──────────────────────────────────────────────────────────────
@@ -548,10 +577,10 @@ def approvals_on(client: Any, account: str) -> bool:
 def review_gate(payload: Any) -> str | None:
     """None when review_equity_order allows a submit-for-approval; else why not."""
     if _find(payload, "customer_approval_required") is not True:
-        return "review did not report customer_approval_required"
+        return "주문 검토가 customer_approval_required를 보고하지 않음"
     checks = _find(payload, "order_checks")
     if checks:
-        return "review raised order checks: " + json.dumps(checks)[:200]
+        return "주문 검토에서 order_checks 경고가 나옴: " + json.dumps(checks)[:200]
     return None
 
 
@@ -605,15 +634,17 @@ def write_trade_log(repo: Path, today: str, now: datetime.datetime, c: dict[str,
 def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
         db: str, accounts_path: Path | None = None) -> tuple[int, list[str]]:
     if ET is None:
-        return 1, ["⚠️ agentic-execute: no US/Eastern timezone data; nothing submitted."]
+        return 1, ["⚠️ agentic-execute: 미국 동부 시간대 데이터가 없어 아무것도 제출하지 "
+                   "않았습니다."]
     today = now.astimezone(ET).date().isoformat()
     mode = "dry-run" if dry_run else load_mode(repo / "config" / "execution.local.json")
     live = mode == LIVE_MODE
-    tag = "agentic-execute" if live else "agentic-execute [dry run]"
+    tag = "agentic-execute" if live else "agentic-execute [시험 실행]"
 
     found = find_record(repo / "logs" / "reviews", today)
     if found is None:
-        return 0, [f"{tag} {today}: no decision record targets today's session; nothing to do."]
+        return 0, [f"{tag} {today}: 오늘 거래일을 대상으로 한 결정 기록이 없어 할 일이 "
+                   "없습니다."]
     record_path, record = found
 
     symbols = set(universe((repo / "strategy" / "policy.md").read_text()))
@@ -632,9 +663,10 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
             else:
                 kept.append(c)
         candidates = kept
-    coverage_warning: str | None = None
+    coverage_warning: str | None = None  # English, for the trade log
+    coverage_report: str | None = None  # Korean, for the delivered report
     if candidates:
-        block, coverage_warning = observatory_coverage(record_path)
+        block, coverage_warning, coverage_report = observatory_coverage(record_path)
         if block:
             skipped += [(c["symbol"], block) for c in candidates]
             candidates = []
@@ -642,7 +674,7 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
         blocks = wash_sale_blocks(record_path, today)
         kept = []
         for c in candidates:
-            why = "no tax facts from the review (wash-sale window unknown)" if blocks is None \
+            why = "리뷰의 세금 정보가 없음 (wash-sale 기간 확인 불가)" if blocks is None \
                 else blocks.get(c["symbol"])
             if why:
                 skipped.append((c["symbol"], why))
@@ -652,8 +684,9 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
     if candidates and record.get("priceAsOf") != record.get("date"):
         # The review prices from its own session's close. Any other date is a
         # stale or mislabelled input, which is the fault the freshness rule names.
-        skipped += [(c["symbol"], f"priceAsOf {record.get('priceAsOf')} is not the review's "
-                                  f"own session {record.get('date')}") for c in candidates]
+        skipped += [(c["symbol"], f"가격 기준일(priceAsOf {record.get('priceAsOf')})이 "
+                                  f"리뷰 거래일({record.get('date')})과 다름")
+                    for c in candidates]
         candidates = []
     if candidates:
         # Only "ok" passes. no-settled-row is what a frozen refresh or a missing
@@ -666,23 +699,23 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
             if v == "ok":
                 kept.append(c)
             else:
-                skipped.append((c["symbol"], f"price check: {v}"))
+                skipped.append((c["symbol"], f"가격 점검 미통과: {VERDICT_KO.get(v, v)}"))
         candidates = kept
 
     lines: list[str] = []
     if not candidates:
-        lines.append(f"{tag} {today}: no auto-eligible buy in {record_path.name}.")
-        lines += [f"  skipped {s}: {r}" for s, r in skipped]
+        lines.append(f"{tag} {today}: {record_path.name}에 자동 실행 대상 매수가 없습니다.")
+        lines += [f"  건너뜀 {s}: {r}" for s, r in skipped]
         return 0, lines
     if not in_session(now):
-        lines.append(f"⚠️ {tag} {today}: outside the regular-session window; "
-                     f"nothing submitted ({len(candidates)} eligible).")
+        lines.append(f"⚠️ {tag} {today}: 정규장 실행 시간대가 아니어서 아무것도 제출하지 "
+                     f"않았습니다 (대상 {len(candidates)}건).")
         return 0, lines
 
     account = account_for("Agentic", accounts_path)
     if not account:
-        return 1, [f"⚠️ {tag} {today}: the Agentic account could not be resolved from "
-                   "config/accounts.local.md; nothing submitted."]
+        return 1, [f"⚠️ {tag} {today}: config/accounts.local.md에서 Agentic 계좌를 찾지 "
+                   "못해 아무것도 제출하지 않았습니다."]
 
     age = close_age_hours(str(record.get("priceAsOf")), now)
     stale = age is None or age > FRESH_HOURS
@@ -697,20 +730,20 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
     client = client_factory()
     try:
         if not approvals_on(client, account):
-            msg = (f"⛔ {tag} {today}: trade approvals are OFF in the Robinhood app. Level 1 "
-                   "submits only while every order waits for your approval there"
-                   + (f"; nothing submitted ({len(candidates)} eligible)." if live else
-                      "; a live run would submit nothing.")
-                   + " Turn approvals on in the Agentic account settings to resume.")
+            msg = (f"⛔ {tag} {today}: Robinhood 앱의 거래 승인이 꺼져 있습니다. Level 1은 "
+                   "모든 주문이 앱에서 승인을 기다릴 때만 제출합니다."
+                   + (f" 아무것도 제출하지 않았습니다 (대상 {len(candidates)}건)." if live else
+                      " 실제 실행이었다면 아무것도 제출하지 않았을 것입니다.")
+                   + " 다시 시작하려면 Agentic 계좌 설정에서 승인을 켜 주십시오.")
             if live:
                 return 0, [msg]
             lines.append(msg)
         use = usage(fetch_orders(client, account, week_start_utc(now.astimezone(ET).date())),
                     fetch_pending(client, account), today)
         if use["dayNotional"] is None:
-            return 0, lines + [f"⚠️ {tag} {today}: an order or pending approval today has no "
-                               "readable notional, so the daily ceiling cannot be checked; "
-                               "nothing submitted."]
+            return 0, lines + [f"⚠️ {tag} {today}: 오늘 주문 또는 승인 대기 중 금액을 읽을 "
+                               "수 없는 건이 있어 일일 한도를 확인할 수 없습니다. 아무것도 "
+                               "제출하지 않았습니다."]
 
         slots = min(MAX_ORDERS_PER_DAY - use["day"], MAX_ORDERS_PER_WEEK - use["week"])
         room = MAX_NOTIONAL_PER_DAY - float(use["dayNotional"])
@@ -718,23 +751,23 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
         for c in candidates:
             sym = c["symbol"]
             if sym in done:
-                skipped.append((sym, "already submitted today by this script"))
+                skipped.append((sym, "이 스크립트가 오늘 이미 제출함"))
                 continue
             if sym in use["todaySymbols"]:
-                skipped.append((sym, "an order or pending approval on this symbol exists today"))
+                skipped.append((sym, "오늘 이 종목에 주문 또는 승인 대기가 이미 있음"))
                 continue
             if slots <= 0:
-                skipped.append((sym, f"order count cap (day {use['day']}/{MAX_ORDERS_PER_DAY}, "
-                                     f"week {use['week']}/{MAX_ORDERS_PER_WEEK})"))
+                skipped.append((sym, f"주문 건수 한도 (오늘 {use['day']}/{MAX_ORDERS_PER_DAY}, "
+                                     f"이번 주 {use['week']}/{MAX_ORDERS_PER_WEEK})"))
                 continue
             if c["notional"] > room:
-                skipped.append((sym, f"daily notional ceiling (${room:.2f} left)"))
+                skipped.append((sym, f"일일 금액 한도 (남은 금액 ${room:.2f})"))
                 continue
             args = order_args(account, c)
             try:
                 review = client.call("review_equity_order", args)
             except (RuntimeError, ValueError) as e:
-                skipped.append((sym, f"review_equity_order failed: {str(e)[:160]}"))
+                skipped.append((sym, f"review_equity_order 실패: {str(e)[:160]}"))
                 continue
             why = review_gate(review)
             if why:
@@ -748,22 +781,24 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
                     continue
                 note = f" ({note})"
             if not live:
-                results.append(f"  would submit: buy {sym} ${c['notional']:.2f}{note}")
+                results.append(f"  제출 예정: 매수 {sym} ${c['notional']:.2f}{note}")
                 slots -= 1
                 room -= c["notional"]
                 continue
             slots -= 1
             room -= c["notional"]
             ident: Any = None
-            error = ""
+            error = ""  # English: it is journaled
+            shown = ""  # what the report says about it
             try:
                 placed = client.call("place_equity_order",
                                      {**args, "ref_id": ref_id(account, today, sym)})
                 ident = _find(placed, "approval_id") or _find(placed, "order_id")
                 if not ident:
                     error = "the response named no approval or order id"
+                    shown = "응답에 승인 또는 주문 id가 없음"
             except (RuntimeError, ValueError) as e:
-                error = str(e)[:160]
+                error = shown = str(e)[:160]
             # An error after the request left is uncertain, not refused: the submit may
             # have landed. Journal it so a re-run skips the symbol instead of relying on
             # Robinhood deduplicating the ref_id, which nobody has confirmed for approvals.
@@ -775,32 +810,33 @@ def run(repo: Path, client_factory: Any, now: datetime.datetime, dry_run: bool,
             journal_path.parent.mkdir(parents=True, exist_ok=True)
             journal_path.write_text(json.dumps(journal, indent=1) + "\n")
             if error:
-                results.append(f"  ⚠️ {sym}: outcome unknown ({error}); check the Robinhood "
-                               "app — a re-run today will not resubmit it")
+                results.append(f"  ⚠️ {sym}: 결과 불명 ({shown}). Robinhood 앱을 확인해 "
+                               "주십시오. 오늘 다시 실행해도 다시 제출하지 않습니다")
                 continue
             write_trade_log(repo, today, now, c, "customer_approval_required; no order checks"
                             + (f"; {coverage_warning}" if coverage_warning else ""),
                             f"submitted for approval, id {ident}")
             submitted += 1
-            results.append(f"  submitted: buy {sym} ${c['notional']:.2f} (id {ident}){note}")
+            results.append(f"  승인 대기로 제출: 매수 {sym} ${c['notional']:.2f} "
+                           f"(id {ident}){note}")
     finally:
         close = getattr(client, "close", None)
         if close:
             close()
 
     if live and submitted:
-        lines.append(f"🤖 {tag} {today}: {submitted} order(s) waiting for your approval in the "
-                     "Robinhood app (Agentic). Nothing fills until you approve.")
+        lines.append(f"🤖 {tag} {today}: 주문 {submitted}건이 Robinhood 앱(Agentic)에서 "
+                     "승인을 기다리고 있습니다. 승인하기 전에는 체결되지 않습니다.")
     elif live and results:
-        lines.append(f"⚠️ {tag} {today}: {len(results)} submit(s) with an unknown outcome.")
+        lines.append(f"⚠️ {tag} {today}: 제출 {len(results)}건, 결과 불명.")
     elif live:
-        lines.append(f"{tag} {today}: nothing submitted.")
+        lines.append(f"{tag} {today}: 아무것도 제출하지 않았습니다.")
     else:
-        lines.append(f"{tag} {today}: {len(results)} order(s) would be submitted for approval.")
+        lines.append(f"{tag} {today}: 주문 {len(results)}건을 승인 대기로 제출할 예정입니다.")
     lines += results
-    if results and coverage_warning:
-        lines.append(f"  ⚠️ {coverage_warning}.")
-    lines += [f"  skipped {s}: {r}" for s, r in skipped]
+    if results and coverage_report:
+        lines.append(f"  ⚠️ {coverage_report}.")
+    lines += [f"  건너뜀 {s}: {r}" for s, r in skipped]
     return 0, lines
 
 
@@ -827,8 +863,8 @@ def main() -> int:
     try:
         rc, lines = run(Path(args.repo), factory, now, args.dry_run, db)
     except Exception as e:  # noqa: BLE001 — report on the channel, fail the cron
-        print(f"⚠️ agentic-execute: stopped before finishing — {e}. Check the Robinhood app "
-              "for anything already submitted.")
+        print(f"⚠️ agentic-execute: 끝까지 실행하지 못하고 멈췄습니다 — {e}. 이미 제출된 "
+              "주문이 있는지 Robinhood 앱을 확인해 주십시오.")
         return 1
     print("\n".join(lines))
     return rc

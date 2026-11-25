@@ -60,16 +60,16 @@ REVIEW = ("## 13:30\nSleeve: $2153.50; prior close $2,179.25; day -$25.75 (-1.18
 def test_the_sleeve_line_is_formatted_in_code_from_the_last_section():
     line = dl.sleeve_line(REVIEW)
     # The thousands separator the model dropped on 10-21, from the LAST section only.
-    assert line == "Sleeve **$2,166.09**, day +$6.63 (+0.31%)"
+    assert line == "Agentic 계좌 **$2,166.09**, 당일 +$6.63 (+0.31%)"
     assert dl.sleeve_line("Sleeve: $2,153.50; prior close $2,179.25; day −$25.75 (-1.18%)") == \
-        "Sleeve **$2,153.50**, day −$25.75 (−1.18%)"
+        "Agentic 계좌 **$2,153.50**, 당일 −$25.75 (−1.18%)"
     assert dl.sleeve_line("no sleeve here") is None
 
 
 def test_the_sleeve_line_survives_a_day_change_without_its_dollar_sign():
     # 2026-11-11: "day +4.03" instead of "day +$4.03" read as no sleeve line at all.
     line = "Sleeve: $2,075.06; prior close $2,071.03; day +4.03 (+0.19%)"
-    assert dl.sleeve_line(line) == "Sleeve **$2,075.06**, day +$4.03 (+0.19%)"
+    assert dl.sleeve_line(line) == "Agentic 계좌 **$2,075.06**, 당일 +$4.03 (+0.19%)"
 
 
 def test_slots_count_agentic_buys_in_the_target_week():
@@ -79,12 +79,12 @@ def test_slots_count_agentic_buys_in_the_target_week():
         "NVDA": [{"account": "Agentic", "date": "2026-10-16"}],        # previous week
     }}
     assert dl.slots_clause("2026-10-22", buys) == \
-        "slots for Thursday: 5 of 5 today, 5 of 6 that week"
+        "목요일 주문 여유: 당일 5/5건, 그 주 5/6건"
     # A Friday review targets Monday: a fresh week whatever the last one spent.
-    assert dl.slots_clause("2026-10-26", buys) == "slots for Monday: 5 of 5 today, 6 of 6 that week"
-    assert "unavailable" in dl.slots_clause("2026-10-22", None)
+    assert dl.slots_clause("2026-10-26", buys) == "월요일 주문 여유: 당일 5/5건, 그 주 6/6건"
+    assert "알 수 없음" in dl.slots_clause("2026-10-22", None)
     # A tax file whose Robinhood half failed has no recentBuys: unknown, never zero fills.
-    assert "unavailable" in dl.slots_clause("2026-10-22", {"robinhood": {"status": "failed: x"},
+    assert "알 수 없음" in dl.slots_clause("2026-10-22", {"robinhood": {"status": "failed: x"},
                                                            "buyBlocks": {}})
 
 
@@ -92,7 +92,7 @@ def test_the_daily_count_never_exceeds_what_the_week_has_left():
     buys = {"recentBuys": {f"S{i}": [{"account": "Agentic", "date": "2026-10-19"}]
                            for i in range(4)}}
     assert dl.slots_clause("2026-10-22", buys) == \
-        "slots for Thursday: 2 of 5 today, 2 of 6 that week"
+        "목요일 주문 여유: 당일 2/5건, 그 주 2/6건"
 
 
 def test_the_caps_match_the_guardrails():
@@ -104,18 +104,17 @@ def test_the_caps_match_the_guardrails():
 def test_proposals_render_in_a_fixed_order_with_standing_and_term():
     lines = dl.proposal_lines(DECISIONS, SIGNALS, STANDING, TAX)
     assert lines[:4] == [
-        "• BUY $100 **QQQM** — 5.94% below 20d high; new",
-        "• TRIM **NVDA** **0.495877sh** (~$107.65) — 11.05% below 20d high; "
-        "standing since Oct 22, 8 sessions; proceeds held as cash",
-        "• Take-profit **MSFT** **0.236215sh** (~$125.86) — standing since at least Sep 1, "
-        "34+ sessions; short-term until Jun 24, 2027",
-        "• Take-profit **META** **0.174662sh** (~$121.99) — standing since Sep 9, 29 sessions; "
-        "mixed lots; oldest lot turns long-term in 12 days",
+        "• 매수 $100 **QQQM** — 20일 고점 대비 −5.94%; 신규",
+        "• 일부 매도 **NVDA** **0.495877주** (~$107.65) — 20일 고점 대비 −11.05%; "
+        "10월 22일부터 8회 연속; 매도 대금은 현금으로 보유",
+        "• 익절 **MSFT** **0.236215주** (~$125.86) — 최소 9월 1일부터 34회 이상 연속; "
+        "2027년 6월 24일 전까지 단기 보유",
+        "• 익절 **META** **0.174662주** (~$121.99) — 9월 9일부터 29회 연속; "
+        "단기·장기 lot 혼재; 가장 오래된 lot은 12일 뒤 장기 전환",
     ]
     # Two differently worded values for one rule collapse to the figure behind it.
-    assert "Blocked (committed-add cap): **META**, **GOOGL** — each committed $200.00 of $200." \
-        in lines
-    assert "No stop-loss today." in lines
+    assert "보류(추가 매수 한도): **META**, **GOOGL** — 각각 약정 $200.00 / 한도 $200." in lines
+    assert "오늘 손절 없음." in lines
 
 
 def test_a_trim_names_its_redistribute_recipients():
@@ -125,23 +124,23 @@ def test_a_trim_names_its_redistribute_recipients():
         {"symbol": "AMZN", "kind": "redistribute", "notional": 55},
     ]}
     assert dl.proposal_lines(rec, None, None, None)[0] == (
-        "• TRIM **NVDA** **0.5sh** (~$110.00) — drawdown n/a; new; "
-        "REDISTRIBUTE → **AAPL** $55, **AMZN** $55")
+        "• 일부 매도 **NVDA** **0.5주** (~$110.00) — 하락폭 없음; 신규; "
+        "재배분 → **AAPL** $55, **AMZN** $55")
 
 
 def test_a_new_proposal_says_new():
-    assert dl.standing_text({"since": DATE, "sessions": 1}) == "new"
-    assert dl.standing_text(None) == "new"
+    assert dl.standing_text({"since": DATE, "sessions": 1}) == "신규"
+    assert dl.standing_text(None) == "신규"
 
 
 def test_a_null_average_renders_as_na_instead_of_raising():
     # 2026-11-05: Robinhood omitted TSLA's and QLD's average cost; the record said null.
     tsla = {"account": "Long-term", "symbol": "TSLA", "kind": "drift", "sheetQty": "104",
             "sheetAvg": 352.99, "liveQty": "107.000000", "liveAvg": None, "gapUsd": 1030.53}
-    assert dl.reconcile_entry(tsla) == "TSLA → 107 @ avg n/a (+3 sh)"
+    assert dl.reconcile_entry(tsla) == "TSLA → 107주 @ 평단 없음 (+3주)"
     qld = {"account": "Long-term", "symbol": "QLD", "kind": "add", "sheetQty": None,
            "sheetAvg": None, "liveQty": "34.200661", "liveAvg": None, "gapUsd": 2475.44}
-    assert dl.reconcile_entry(qld) == "add QLD 34.200661 @ avg n/a"
+    assert dl.reconcile_entry(qld) == "추가 QLD 34.200661주 @ 평단 없음"
 
 
 def test_one_broken_section_does_not_cost_the_whole_message(tmp_path):
@@ -154,23 +153,23 @@ def test_one_broken_section_does_not_cost_the_whole_message(tmp_path):
         {"alerts": [{"account": "Mid-term", "symbol": "XYZ", "kind": "drift"}],
          "tradeLog": {"filledInWindow": 0, "findings": []}}))
     text = dl.agentic_message(logs, DATE)
-    assert "• BUY $100 **QQQM**" in text
-    assert "Reconcile: could not be rendered today (KeyError)" in text
+    assert "• 매수 $100 **QQQM**" in text
+    assert "시트 대조: 오늘은 표시하지 못했습니다(KeyError)" in text
 
 
 def test_reconcile_entries_take_the_copyable_form():
     drift = {"symbol": "SSO", "kind": "drift", "sheetQty": "4.261975", "sheetAvg": 48.87,
              "liveQty": "34.261975", "liveAvg": 67.90}
-    assert dl.reconcile_entry(drift) == "SSO → 34.261975 @ $67.90 (+30 sh, avg +$19.03)"
+    assert dl.reconcile_entry(drift) == "SSO → 34.261975주 @ $67.90 (+30주, 평단 +$19.03)"
     same_avg = dict(drift, sheetAvg=67.90, sheetQty="35.5")
-    assert dl.reconcile_entry(same_avg) == "SSO → 34.261975 @ $67.90 (−1.238025 sh)"
+    assert dl.reconcile_entry(same_avg) == "SSO → 34.261975주 @ $67.90 (−1.238025주)"
     assert dl.reconcile_entry({"symbol": "BBB", "kind": "add", "liveQty": "2", "liveAvg": 51}) == \
-        "add BBB 2 @ $51.00"
+        "추가 BBB 2주 @ $51.00"
     assert dl.reconcile_entry({"symbol": "CCC", "kind": "remove", "sheetQty": "5"}) == \
-        "remove CCC (−5 sh)"
+        "삭제 CCC (−5주)"
     assert dl.reconcile_entry({"symbol": "DDD", "kind": "verify", "liveQty": "5.25",
                                "sheetQty": "5", "liveAvg": 1, "sheetAvg": 1}) == \
-        "verify DDD 5.25 (+0.25 sh)"
+        "확인 DDD 5.25주 (+0.25주)"
 
 
 def test_the_full_messages(tmp_path):
@@ -189,23 +188,24 @@ def test_the_full_messages(tmp_path):
            f"reviews__{DATE}.tax.json": TAX,
            f"reconcile__{DATE}.json": recon,
            f"reconcile__{DATE}.md": "report",
-           "shadow__latest.txt": "shadow-check: earlier sessions\n  = 2026-10-15: now verified",
-           f"digest__{DATE}.briefing.md": "Briefing: NVDA weakness tied to rate fears."})
+           "shadow__latest.txt": ("이전 거래일 재점검:\n"
+                                  "  = 10월 15일: 이제 검증됨 — 가격 1건 확정 종가와 일치"),
+           f"digest__{DATE}.briefing.md": "브리핑: 금리 우려에 따른 NVDA 약세."})
     agentic = dl.agentic_message(logs, DATE)
     blocks = agentic.strip().split("\n\n")
-    assert blocks[0] == ("**Hermes Trader — Agentic**\nSleeve **$2,166.09**, day +$6.63 (+0.31%); "
-                         "slots for Thursday: 5 of 5 today, 6 of 6 that week.")
+    assert blocks[0] == ("**Hermes Trader — Agentic**\nAgentic 계좌 **$2,166.09**, "
+                         "당일 +$6.63 (+0.31%); 목요일 주문 여유: 당일 5/5건, 그 주 6/6건.")
     assert blocks[-1] == dl.CLOSER
-    reconcile = next(b for b in blocks if b.startswith("Reconcile:")).splitlines()
+    reconcile = next(b for b in blocks if b.startswith("시트 대조:")).splitlines()
     # Accounts in a fixed order, each on its own line.
-    assert reconcile[2] == "Long-term: TSLA → 102 @ $352.25 (+13 sh, avg +$3.69)."
-    assert reconcile[3] == "Mid-term: PM → 15.548461 @ $158.74 (+1 sh, avg +$3.53)."
-    assert any(b.startswith("Shadow check:\nshadow-check:") for b in blocks)
-    assert "Briefing: NVDA weakness tied to rate fears." in blocks
+    assert reconcile[2] == "Long-term: TSLA → 102주 @ $352.25 (+13주, 평단 +$3.69)."
+    assert reconcile[3] == "Mid-term: PM → 15.548461주 @ $158.74 (+1주, 평단 +$3.53)."
+    assert any(b.startswith("Shadow 점검:\n이전 거래일 재점검:") for b in blocks)
+    assert "브리핑: 금리 우려에 따른 NVDA 약세." in blocks
 
     # Reconcile drifted, so only the trade-log check is reported as passing.
-    assert blocks[-2] == "Briefing: NVDA weakness tied to rate fears."
-    assert "Checks: no filled Agentic orders in the trade-log window." in blocks
+    assert blocks[-2] == "브리핑: 금리 우려에 따른 NVDA 약세."
+    assert "점검: 거래 기록 점검 기간에 체결된 Agentic 주문 없음." in blocks
 
 
 def test_departures_and_decision_requests_have_one_shape():
@@ -217,19 +217,19 @@ def test_departures_and_decision_requests_have_one_shape():
                                               {"side": "exit", "detail": "+12% from cost"}]}]}
     assert dl.departure_section(rec)[1] == (
         "• **META** (10.44% below high) — BUY >=5% below 20-day high. "
-        "Did: Propose take-profit. Why: Realize the gain.")
+        "조치: Propose take-profit. 이유: Realize the gain.")
     assert dl.decision_section(rec)[1] == (
-        "• **NVDA** — Buy or exit? buy: 8.8% below high; exit: +12% from cost.")
+        "• **NVDA** — Buy or exit? 매수: 8.8% below high; 매도: +12% from cost.")
 
 
 def test_missing_records_say_so_instead_of_going_quiet(tmp_path):
     logs = _logs(tmp_path, **{f"reviews__{DATE}.md": REVIEW})
     agentic = dl.agentic_message(logs, DATE)
-    assert "No decision record today" in agentic
-    assert "Reconcile: did not run today." in agentic
-    assert "slots unavailable" in agentic
+    assert "오늘 결정 기록이 없어" in agentic
+    assert "시트 대조: 오늘 실행되지 않았습니다." in agentic
+    assert "주문 여유 알 수 없음" in agentic
     # No reconcile record: the checks did not run, so nothing may say they passed.
-    assert "Checks:" not in agentic
+    assert "점검:" not in agentic
 
 
 def test_a_malformed_record_still_produces_a_message(tmp_path):
@@ -243,7 +243,7 @@ def test_a_malformed_record_still_produces_a_message(tmp_path):
     text = (logs / "digest" / f"{DATE}.agentic.md").read_text()
     # The broken section says so in place; the rest of the message still goes out.
     assert text.startswith("**Hermes Trader — Agentic**")
-    assert "Proposals: could not be rendered today (KeyError)" in text
+    assert "제안: 오늘은 표시하지 못했습니다(KeyError)" in text
 
 
 def test_departures_read_the_same_way_share_one_line():
@@ -258,8 +258,8 @@ def test_departures_read_the_same_way_share_one_line():
     ]}
     assert dl.departure_section(rec)[1:3] == [
         "• **META** (19.6% below high), **GOOGL** (10.81% below high) — BUY >=5% below 20-day "
-        f"high. Did: Choose 50% TRIM and omit BUY. Why: {why}",
-        "• **AAPL** (10.2%) — TRIM >=10% below 20-day high. Did: Hold. Why: Earnings tomorrow.",
+        f"high. 조치: Choose 50% TRIM and omit BUY. 이유: {why}",
+        "• **AAPL** (10.2%) — TRIM >=10% below 20-day high. 조치: Hold. 이유: Earnings tomorrow.",
     ]
 
 
@@ -276,9 +276,9 @@ def test_redistribute_blocks_share_one_line_whatever_the_rule_wording():
          "value": "Proposed sell on this symbol"},
     ]
     assert dl.blocked_lines(blocked, decisions) == [
-        "Blocked (committed-add cap): **NVDA** — committed $200.00 of $200.",
-        "No REDISTRIBUTE recipient: **MSFT** (exit proposed), "
-        "**AAPL** (committed $200.00 of $200), **META** (trim proposed).",
+        "보류(추가 매수 한도): **NVDA** — 약정 $200.00 / 한도 $200.",
+        "재배분 대상 없음: **MSFT** (매도 제안), "
+        "**AAPL** (약정 $200.00 / 한도 $200), **META** (일부 매도 제안).",
     ]
 
 
@@ -288,16 +288,16 @@ def test_a_wash_sale_window_a_stop_loss_would_open_reads_as_one_line():
     blocked = [{"symbol": s, "rule": "wash-sale window from proposed stop-loss", "value": value}
                for s in ("GOOGL", "NVDA")]
     assert dl.blocked_lines(blocked, []) == [
-        "Wash-sale hold if the stop-loss sells at a loss: **GOOGL**, **NVDA** — "
-        "no buys until Dec 12, 2026."]
+        "손절이 손실로 체결되면 wash-sale 보류: **GOOGL**, **NVDA** — "
+        "2026년 12월 12일부터 매수 재개."]
     # 11-06's wording, with only a 'through' date: buys resume the day after.
     other = [{"symbol": "GOOGL", "rule": "proposed stop-loss wash-sale block",
               "value": "Loss sale on 2026-11-09 starts a block through 2026-12-10"}]
-    assert dl.blocked_lines(other, [])[0].endswith("no buys until Dec 11, 2026.")
+    assert dl.blocked_lines(other, [])[0].endswith("2026년 12월 11일부터 매수 재개.")
     # A window an actual past sale opened keeps the generic line.
     past = [{"symbol": "AAPL", "rule": "wash-sale buy block", "value": "loss sale 2026-11-02"}]
     assert dl.blocked_lines(past, []) == [
-        "Blocked (wash-sale buy block): **AAPL** — loss sale 2026-11-02."]
+        "보류(wash-sale 기간): **AAPL** — loss sale 2026-11-02."]
 
 
 def test_one_rule_is_one_line_whatever_its_spelling_or_extra_figures():
@@ -314,9 +314,8 @@ def test_one_rule_is_one_line_whatever_its_spelling_or_extra_figures():
          "value": "committed $100.00 of $200; filled 2026-11-18 ($100.00)"},
     ]
     assert dl.blocked_lines(blocked, []) == [
-        "Blocked (committed-add cap): **NVDA**, **GOOGL**, **MSFT** — "
-        "each committed $200.00 of $200.",
-        "Blocked (one add per symbol per calendar week): **VOO** — committed $100.00 of $200.",
+        "보류(추가 매수 한도): **NVDA**, **GOOGL**, **MSFT** — 각각 약정 $200.00 / 한도 $200.",
+        "보류(종목당 주 1회 추가 매수): **VOO** — 약정 $100.00 / 한도 $200.",
     ]
 
 
@@ -327,18 +326,18 @@ def test_a_proposed_stop_loss_always_carries_its_wash_sale_hold():
                  {"side": "sell", "symbol": "GOOGL", "kind": "stop-loss"},
                  {"side": "sell", "symbol": "MSFT", "kind": "take-profit"}]
     assert dl.blocked_lines([], decisions, "2026-11-24") == [
-        "Wash-sale hold if the stop-loss sells at a loss: **NVDA**, **GOOGL** — "
-        "no buys until Dec 25, 2026."]
+        "손절이 손실로 체결되면 wash-sale 보류: **NVDA**, **GOOGL** — "
+        "2026년 12월 25일부터 매수 재개."]
     # A date the review also wrote for the same symbol is replaced, not repeated.
     stale = [{"symbol": "NVDA", "rule": "proposed stop-loss starts wash-sale buy block",
               "value": "If filled 2026-11-20 at the price used, loss sale blocks buys through "
                        "2026-12-20; clears 2026-12-21"}]
     assert dl.blocked_lines(stale, decisions, "2026-11-24") == [
-        "Wash-sale hold if the stop-loss sells at a loss: **NVDA**, **GOOGL** — "
-        "no buys until Dec 25, 2026."]
+        "손절이 손실로 체결되면 wash-sale 보류: **NVDA**, **GOOGL** — "
+        "2026년 12월 25일부터 매수 재개."]
     # 11-19's record: the computed date matches what the review wrote.
     assert dl.blocked_lines(stale, decisions[:1], "2026-11-20") == [
-        "Wash-sale hold if the stop-loss sells at a loss: **NVDA** — no buys until Dec 21, 2026."]
+        "손절이 손실로 체결되면 wash-sale 보류: **NVDA** — 2026년 12월 21일부터 매수 재개."]
 
 
 def test_a_position_moved_between_accounts_is_one_entry():
@@ -353,16 +352,16 @@ def test_a_position_moved_between_accounts_is_one_entry():
         {"account": "Mid-term", "symbol": "TSLA", "kind": "remove", "sheetQty": "2"},
     ]}
     lines = dl.reconcile_section(recon, True)
-    assert "Moved between accounts: QLD 34.200661 sh Mid-term → Long-term." in lines
+    assert "계좌 간 이동: QLD 34.200661주 Mid-term → Long-term." in lines
     # Different share counts are not a move; each stays in its own account.
-    assert "Long-term: add TSLA 3 @ avg n/a." in lines
-    assert "Mid-term: remove SPY (−0.026142 sh); remove TSLA (−2 sh)." in lines
+    assert "Long-term: 추가 TSLA 3주 @ 평단 없음." in lines
+    assert "Mid-term: 삭제 SPY (−0.026142주); 삭제 TSLA (−2주)." in lines
 
 
 def test_passing_checks_close_the_agentic_message_in_one_line():
     clean = {"alerts": [], "tradeLog": {"filledInWindow": 2, "findings": []}}
     assert dl.checks_line(clean) == (
-        "Checks: the sheet matches Robinhood; all 2 filled Agentic orders logged.")
+        "점검: 시트가 Robinhood와 일치; 체결된 Agentic 주문 2건 모두 기록됨.")
     both_failed = {"alerts": [{"symbol": "PM"}], "tradeLog": {"findings": [{"symbol": "VOO"}]}}
     assert dl.checks_line(both_failed) is None
     assert dl.checks_line(None) is None
@@ -381,4 +380,4 @@ def test_only_the_agentic_message_is_written(tmp_path):
     written = sorted(p.name for p in (logs / "digest").iterdir())
     assert written == [f"{DATE}.agentic.md"]
     text = (logs / "digest" / f"{DATE}.agentic.md").read_text()
-    assert "Checks: the sheet matches Robinhood; no filled Agentic orders" in text
+    assert "점검: 시트가 Robinhood와 일치; 거래 기록 점검 기간에 체결된 Agentic 주문 없음" in text

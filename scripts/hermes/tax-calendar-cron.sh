@@ -37,7 +37,7 @@ export PATH="$PATH:/usr/bin:/bin"
 unset _d
 
 if [ ! -d "$REPO" ]; then
-  echo "⚠️ tax-calendar $DATE_ISO: configured repo does not exist at $REPO — calendar not built. Set TRADING_AGENT_REPO in the trader profile .env."
+  echo "⚠️ tax-calendar $DATE_ISO: 설정된 저장소 경로 $REPO 가 없어 캘린더를 만들지 않았습니다. trader profile .env의 TRADING_AGENT_REPO를 고쳐 주세요."
   exit 1
 fi
 
@@ -62,7 +62,7 @@ fi
 
 if [ "$RC" -ne 0 ] || [ ! -r "$JSON" ]; then
   FINGERPRINT="failed:${RC}"
-  MESSAGE="⚠️ tax-calendar FAILED $DATE_ISO (rc=$RC) — $(tail -c 300 "$ERR" | tr '\n' ' ')"
+  MESSAGE="⚠️ tax-calendar 실패 $DATE_ISO (rc=$RC) — $(tail -c 300 "$ERR" | tr '\n' ' ')"
 else
   FINGERPRINT="$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["fingerprint"])' "$JSON" 2>/dev/null)"
   [ -n "$FINGERPRINT" ] || FINGERPRINT="unreadable"
@@ -72,7 +72,7 @@ rm -f "$ERR"
 if [ "$FINGERPRINT" != "$PREV" ]; then
   if [ "$FINGERPRINT" = "clean" ]; then
     # Not on a first run: "back to clean" about windows nobody was told about says nothing.
-    [ "$FIRST_RUN" -eq 0 ] && echo "✅ Tax calendar back to clean — no open wash-sale windows or planned-sale conflicts, every source answered."
+    [ "$FIRST_RUN" -eq 0 ] && echo "✅ 세금 캘린더가 다시 깨끗해졌습니다. 열린 wash-sale 기간도, 예정된 매도와 겹치는 일정도 없고, 모든 출처가 응답했습니다."
   else
     printf '%s\n' "$MESSAGE"
   fi

@@ -62,7 +62,7 @@ def test_a_normal_day_prints_nothing_for_telegram(tmp_path):
 
 def test_the_agentic_message_falls_back_to_telegram_when_discord_fails(tmp_path):
     out = _run(tmp_path, sender_rc=1).stdout
-    assert "could not be sent to Discord" in out
+    assert "Discord로 보내지 못해" in out
     assert "proposals here" in out
     assert "US accounts: stale" not in out
 

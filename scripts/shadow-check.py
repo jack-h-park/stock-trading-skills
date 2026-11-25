@@ -122,6 +122,52 @@ def check(record: dict[str, Any], db_path: str) -> list[dict[str, Any]]:
     return findings
 
 
+# Human-facing rendering. Every line this script prints reaches the trader's
+# daily message (digest_lines.py pastes latest.txt verbatim), and those messages
+# are in Korean. The verdict values themselves stay English: scheduled_orders.py
+# and the ledger read them, so only the printed label is translated.
+VERDICT_LABEL = {
+    "price-mismatch": "가격 불일치",
+    "no-settled-row": "확정 종가 없음",
+    "incomplete": "결정 기록 불완전",
+}
+EARLIER_HEADER = "이전 거래일 재점검:"
+SIDE_LABEL = {"buy": "매수", "sell": "매도", "trim": "일부 매도"}
+
+
+def kdate(value: Any) -> str:
+    """'2026-11-23' -> '11월 23일'; anything unparseable is printed as it came."""
+    try:
+        d = datetime.date.fromisoformat(str(value))
+    except ValueError:
+        return str(value)
+    return f"{d.month}월 {d.day}일"
+
+
+def num(value: Any) -> str:
+    """A price without float noise: 349.0799865722656 -> 349.08, 0.1234 kept."""
+    if isinstance(value, (int, float)):
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def finding_line(f: dict[str, Any], price_date: Any, origin: str | None = None) -> str:
+    """One '!' line for a finding that is not ok."""
+    verdict = f.get("verdict")
+    label = VERDICT_LABEL.get(verdict, verdict)
+    where = f" ({kdate(origin)} 기록)" if origin else ""
+    if verdict == "no-settled-row":
+        detail = f"{kdate(price_date)} 종가가 아직 저장되지 않음"
+    elif verdict == "incomplete":
+        detail = "symbol, priceUsed 또는 priceAsOf 누락"
+    elif "priceUsed" in f:
+        detail = "사용 가격 {}, 확정 종가 {} (차이 {})".format(
+            num(f.get("priceUsed")), num(f.get("settledClose")), num(f.get("delta")))
+    else:
+        detail = f.get("detail") or ""
+    return f"  ! {f.get('symbol')}{where} {label}: {detail}"
+
+
 def read_ledger(ledger: Path) -> list[dict[str, Any]]:
     if not ledger.exists():
         return []
@@ -196,19 +242,16 @@ def recheck(reviews: Path, entries: list[dict[str, Any]], db_path: str,
                                         **({"abandoned": True} if abandoned else {})))
         if mismatched:
             for f in mismatched:
-                lines.append("  ! {} (from {}) {}: used {}, settled {} (delta {})".format(
-                    f.get("symbol"), date, f["verdict"], f.get("priceUsed"),
-                    f.get("settledClose"), f.get("delta")))
+                lines.append(finding_line(f, record.get("priceAsOf"), origin=date))
         if abandoned:
-            lines.append(f"  x {date}: never verified — no settled close for "
-                         f"{', '.join(missing)} after {age} days; no longer carried")
+            lines.append(f"  x {kdate(date)}: 끝내 검증 못 함 — {age}일이 지나도록 "
+                         f"{', '.join(missing)} 확정 종가 없음, 더 이상 추적하지 않음")
         elif missing:
-            lines.append(f"  ~ {date}: still unverified — no settled close yet for "
-                         f"{', '.join(missing)} ({age} days)")
+            lines.append(f"  ~ {kdate(date)}: 아직 미검증 — {', '.join(missing)} "
+                         f"확정 종가 아직 없음 ({age}일 경과)")
         elif not mismatched:
-            n = len(findings)
-            match = "prices match" if n != 1 else "price matches"
-            lines.append(f"  = {date}: now verified — {n} {match} the settled close")
+            lines.append(f"  = {kdate(date)}: 이제 검증됨 — 가격 {len(findings)}건 "
+                         "확정 종가와 일치")
     return new_entries, lines
 
 
@@ -238,8 +281,8 @@ def main() -> int:
         # Not an error. Until the review has run once with the record step, there
         # is nothing to check, and saying so loudly every session teaches nobody.
         if not args.quiet:
-            print("shadow-check: no decision record yet%s" %
-                  ("" if not args.date else f" for {args.date}"))
+            print("%s결정 기록이 아직 없습니다" %
+                  ("" if not args.date else f"{kdate(args.date)} "))
         return 0
 
     record = json.loads(path.read_text())
@@ -263,30 +306,30 @@ def main() -> int:
     if args.quiet and not bad and not carried_lines:
         return 0
     if args.quiet and not bad:
-        print("shadow-check: earlier sessions")
+        print(EARLIER_HEADER)
         print("\n".join(carried_lines))
         return 0
 
     departures = record.get("departures") or []
+    # threshold / observed / did / why and reason are model-written text from
+    # the review; they are placed as they come, never translated here.
     print(
-        f"shadow-check {record.get('date')} (would execute {record.get('targetSession')}): "
-        f"{len(auto)} auto-eligible, {len(findings)} checked, {len(departures)} departure(s)"
+        f"{kdate(record.get('date'))} 결정 기록 ({kdate(record.get('targetSession'))} 실행 예정): "
+        f"자동 실행 대상 {len(auto)}건, 점검 {len(findings)}건, "
+        f"기준을 넘어 판단 {len(departures)}건"
     )
     for d in departures:
-        print("  read past: {} {} ({}) -> {} — {}".format(
+        print("  기준을 넘어 판단: {} {} ({}) → {} — {}".format(
             d.get("symbol"), d.get("threshold"), d.get("observed"), d.get("did"), d.get("why", "")))
     for d in auto:
-        print("  would place: {} {} ${} — {}".format(
-            d.get("side"), d.get("symbol"), d.get("notional"), d.get("reason", "")))
+        side = d.get("side")
+        print("  실행 예정: {} {} ${} — {}".format(
+            d.get("symbol"), SIDE_LABEL.get(str(side).lower(), side), d.get("notional"),
+            d.get("reason", "")))
     for f in bad:
-        detail = f.get("detail") or (
-            "used {}, settled {} (delta {})".format(
-                f.get("priceUsed"), f.get("settledClose"), f.get("delta")
-            )
-        )
-        print("  ! {} {}: {}".format(f.get("symbol"), f["verdict"], detail))
+        print(finding_line(f, record.get("priceAsOf")))
     if carried_lines:
-        print("shadow-check: earlier sessions")
+        print(EARLIER_HEADER)
         print("\n".join(carried_lines))
     return 0
 

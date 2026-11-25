@@ -173,7 +173,8 @@ def test_clean_only_when_nothing_is_open_and_every_source_answered():
     assert _doc(_rh(), _ok_obs(_obs()))["fingerprint"] == "clean"
     partial = _doc(_rh(), {"status": "unavailable", "reason": "refresh-in-progress", "data": None})
     assert partial["fingerprint"] != "clean"
-    assert "PARTIAL, observatory unavailable" in tc.headline(partial)
+    assert "PARTIAL, observatory unavailable" in tc.headline(partial)        # the .md table
+    assert "일부만 확인됨, Observatory 출처 응답 없음" in tc.headline_ko(partial)  # the notice
 
 
 def test_observatory_exit_3_is_a_refresh_not_a_failure():
@@ -285,4 +286,70 @@ def test_a_failed_proxy_is_an_unavailable_source_not_a_failed_run(tmp_path):
                                            "status": "unavailable", "reason": "token expired"}
     assert doc["fingerprint"] != "clean"
     msg = tc.render_message(doc, "x.md")
-    assert "robinhood unavailable (token expired)" in msg
+    assert "Robinhood 응답 없음 (token expired)" in msg
+
+
+def test_the_notice_is_korean_and_keeps_tickers_dates_and_the_md_path():
+    sale = {"symbol": "AAAA", "account": "Mid-term", "date": "2026-03-02", "loss": -5}
+    rh = _rh([sale], orders=[
+        {"symbol": "AAAA", "account": "Agentic", "side": "buy", "state": "filled",
+         "date": "2026-03-12"},
+        {"symbol": "CCCC", "account": "Agentic", "side": "sell", "state": "queued",
+         "date": "2026-03-16"}],
+        earnings={"AAAA": {"status": "ok", "reports": [
+            {"date": "2026-03-30", "timing": "pm", "verified": False}]}})
+    plans = [{"ticker": "AAAA", "account_role": "Mid-term", "planned_date": "2026-03-10",
+              "intent": "loss-harvest", "note": ""},
+             {"ticker": "ZZZZ", "account_role": "", "planned_date": "2027-01-05",
+              "intent": "gain", "note": ""}]
+    doc = tc.build(TODAY, rh, OK, {"status": "unavailable", "reason": "refresh-in-progress",
+                                   "data": None}, plans, [])
+    lines = tc.render_message(doc, "logs/tax-calendar/2026-03-16.md").splitlines()
+    assert lines[0] == ("세금 일정 2026년 3월 16일: 열린 wash-sale 기간 1건, 기간 내 매수 1건, "
+                        "예정된 매도 충돌 1건 — 일부만 확인됨, Observatory 출처 응답 없음")
+    assert lines[1] == ("- AAAA wash-sale 기간 4월 1일까지 (16일 남음) · 마지막 손실 매도 "
+                        "3월 2일 · 보고: Robinhood")
+    assert lines[2] == ("- AAAA 매수 (Agentic, 체결): "
+                        "손실 매도 30일 이내의 매수라 그 손실 공제가 이연됩니다")
+    assert lines[3] == ("- CCCC 매도 (Agentic, 대기): "
+                        "손실로 체결되면 30일 wash-sale 기간이 시작됩니다")
+    assert lines[4] == ("- 예정된 매도 (절세용 손실 매도) AAAA 3월 10일: 기간 내 매수; "
+                        "실적 발표 3월 30일 (미확정); 예정일 지남; "
+                        "AAAA wash-sale 기간이 4월 1일까지 열려 있음")
+    assert lines[5] == "- 예정된 매도 (차익 실현) ZZZZ 2027년 1월 5일: 기간 내 해당 사항 없음"
+    assert lines[6] == ("출처: Robinhood 정상 · Observatory 응답 없음 (데이터베이스 갱신 중) "
+                        "· 실적 발표 정상")
+    assert lines[7] == "전체 표: logs/tax-calendar/2026-03-16.md"
+    # The JSON keeps its English notes: the fingerprint and other readers depend on them.
+    assert doc["plannedSales"][0]["notes"][0] == "planned date has passed"
+
+
+def test_every_note_and_planned_sales_problem_the_script_writes_has_a_korean_rendering(tmp_path):
+    """Run the producers and translate what they actually emit, so a new English
+    note or problem message cannot reach Telegram untranslated without failing here."""
+    p = tmp_path / "planned-sales.local.json"
+    p.write_text(json.dumps([
+        "x", {"ticker": "", "planned_date": "2026-04-01", "intent": "gain"},
+        {"ticker": "KKKK", "planned_date": "April", "intent": "gain"},
+        {"ticker": "LLLL", "planned_date": "2026-04-01", "intent": "sell"}]))
+    _, problems = tc.load_planned_sales(p)
+    p.write_text("{")
+    problems += tc.load_planned_sales(p)[1]
+    p.write_text("{}")
+    problems += tc.load_planned_sales(p)[1]
+    assert len(problems) == 6
+    for prob in problems:
+        assert tc._translate(prob, tc._PROBLEM_KO) != prob, prob
+    sale = {"symbol": "AAAA", "account": "Mid-term", "date": "2026-03-02", "loss": -5}
+    doc = _doc(_rh([sale]), _ok_obs(_obs()), [
+        {"ticker": "AAAA", "account_role": "", "planned_date": "2026-03-01",
+         "intent": "other", "note": ""}])
+    notes = doc["plannedSales"][0]["notes"]
+    assert len(notes) == 2
+    for note in notes:
+        assert tc._translate(note, tc._NOTE_KO, doc["asOf"]) != note, note
+    effects = {"open-buy-inside-window", "open-buy", "open-sell", "filled-buy-inside-window",
+               "recent-buy"}
+    assert effects <= set(tc.EFFECT_KO)
+    assert set(tc.INTENTS) <= set(tc.INTENT_KO)
+    assert tc.OPEN_STATES | {"filled"} <= set(tc.STATE_KO)
